@@ -19,6 +19,12 @@ yarn-error.log*
 *.db-journal
 *.sqlite
 
+# SQLite Amalgamation
+cpp/sqlite3.c
+cpp/sqlite3.h
+cpp/sqlite3ext.h
+cpp/shell.c
+
 # IDEs and Editors
 .vscode/
 .idea/
