@@ -1,40 +1,25 @@
-# Node.js
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-.env
-
-# Build Artifacts
+# Binaries
 *.exe
-*.obj
-*.pdb
-*.ilk
-*.exp
-*.lib
+*.exe~
+*.dll
+*.so
+*.dylib
+mcpwatch
+bin/
 
 # Databases
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 *.sqlite
 
-# SQLite Amalgamation
-cpp/sqlite3.c
-cpp/sqlite3.h
-cpp/sqlite3ext.h
-cpp/shell.c
+# Go
+vendor/
 
-# IDEs and Editors
+# OS / IDE
 .vscode/
 .idea/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.swp
-
-# OS Files
+.DS_Store
 Thumbs.db
 Desktop.ini
-.DS_Store

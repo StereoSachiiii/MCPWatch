@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>mcpwatch</title>
+</head>
+<body>
+    mcpwatch -> live monitoring
+    <hr>
+    <div id="timeline"></div>
+
+    <script>
+        function renderTimeline(data) {
+            if (!data) return;
+            const container = document.getElementById('timeline');
+            container.innerHTML = data.map(i => `
+                <div>
+                    ${new Date(i.timestamp).toLocaleTimeString().toLowerCase()} -> ${i.method || 'response'}
+                    <br>
+                    direction: ${i.direction.toLowerCase()} -> latency: ${i.latency_ms ? i.latency_ms + 'ms' : 'n/a'}
+                    <br>
+                    payload:
+                    <pre>${JSON.stringify(i.params || i.result || JSON.parse(i.raw), null, 2).toLowerCase()}</pre>
+                    <hr>
+                </div>
+            `).join('');
+        }
+
+        function poll() {
+            fetch('/api/interactions')
+                .then(r => r.json())
+                .then(renderTimeline)
+                .catch(console.error);
+        }
+
+        setInterval(poll, 1000);
+        poll();
+    </script>
+</body>
+</html>
