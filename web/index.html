@@ -2,39 +2,71 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>mcpwatch</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCPWatch — MCP Observation Proxy</title>
+    <meta name="description" content="Real-time inspection dashboard for MCP JSON-RPC traffic">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>◇</text></svg>">
 </head>
 <body>
-    mcpwatch -> live monitoring
-    <hr>
-    <div id="timeline"></div>
-
-    <script>
-        function renderTimeline(data) {
-            if (!data) return;
-            const container = document.getElementById('timeline');
-            container.innerHTML = data.map(i => `
-                <div>
-                    ${new Date(i.timestamp).toLocaleTimeString().toLowerCase()} -> ${i.method || 'response'}
-                    <br>
-                    direction: ${i.direction.toLowerCase()} -> latency: ${i.latency_ms ? i.latency_ms + 'ms' : 'n/a'}
-                    <br>
-                    payload:
-                    <pre>${JSON.stringify(i.params || i.result || JSON.parse(i.raw), null, 2).toLowerCase()}</pre>
-                    <hr>
+    <div class="app">
+        <!-- Header -->
+        <header class="header" id="header">
+            <div class="header-left">
+                <span class="logo">◇ MCPWatch</span>
+                <span class="logo-sub">observation proxy</span>
+            </div>
+            <div class="header-right">
+                <div class="connection-status">
+                    <span class="status-dot" id="status-dot"></span>
+                    <span id="status-text">connecting...</span>
                 </div>
-            `).join('');
-        }
+                <span id="client-count" style="font-size:0.75rem;color:var(--text-muted)"></span>
+            </div>
+        </header>
 
-        function poll() {
-            fetch('/api/interactions')
-                .then(r => r.json())
-                .then(renderTimeline)
-                .catch(console.error);
-        }
+        <!-- Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Total Messages</div>
+                <div class="stat-value cyan" id="stat-total">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Requests</div>
+                <div class="stat-value green" id="stat-requests">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Avg Latency</div>
+                <div class="stat-value amber" id="stat-latency">—</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Errors</div>
+                <div class="stat-value red" id="stat-errors">0</div>
+            </div>
+        </div>
 
-        setInterval(poll, 1000);
-        poll();
-    </script>
+        <!-- Filters -->
+        <div class="filter-bar">
+            <input type="text" id="search-input" placeholder="search methods, payloads...">
+            <button class="filter-btn" data-dir="IN">IN →</button>
+            <button class="filter-btn" data-dir="OUT">← OUT</button>
+            <button class="filter-btn" data-transport="stdio">stdio</button>
+            <button class="filter-btn" data-transport="sse">sse</button>
+            <button class="filter-btn" data-transport="http">http</button>
+        </div>
+
+        <!-- Timeline -->
+        <div class="timeline" id="timeline">
+            <div class="timeline-empty">
+                <div class="icon">◇</div>
+                <div>waiting for json-rpc traffic...</div>
+                <div style="margin-top:6px;font-size:0.78rem;color:var(--text-muted)">
+                    start your mcp server with mcpwatch --wrap
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
 </body>
 </html>

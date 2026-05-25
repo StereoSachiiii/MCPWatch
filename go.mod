@@ -2,7 +2,10 @@ module mcpwatch
 
 go 1.22
 
-require modernc.org/sqlite v1.29.5
+require (
+	github.com/gorilla/websocket v1.5.3
+	modernc.org/sqlite v1.29.5
+)
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
