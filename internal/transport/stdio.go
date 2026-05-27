@@ -66,7 +66,10 @@ func (h *StdioHandler) Start(ctx context.Context, messages chan<- *engine.Messag
 		for scanner.Scan() {
 			line := scanner.Text()
 			if msg := engine.ParseJSONRPC(line, "IN", h.Type()); msg != nil {
-				messages <- msg
+				select {
+				case messages <- msg:
+				default:
+				}
 			}
 		}
 		stdinPipe.Close()
@@ -79,7 +82,10 @@ func (h *StdioHandler) Start(ctx context.Context, messages chan<- *engine.Messag
 	for scanner.Scan() {
 		line := scanner.Text()
 		if msg := engine.ParseJSONRPC(line, "OUT", h.Type()); msg != nil {
-			messages <- msg
+			select {
+			case messages <- msg:
+			default:
+			}
 		}
 	}
 

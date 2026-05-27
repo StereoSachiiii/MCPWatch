@@ -69,12 +69,12 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.hub.Register(conn)
+	client := s.hub.Register(conn)
 
 	// Read loop keeps connection alive; detects client disconnect
 	for {
 		if _, _, err := conn.ReadMessage(); err != nil {
-			s.hub.Unregister(conn)
+			s.hub.Unregister(client)
 			break
 		}
 	}

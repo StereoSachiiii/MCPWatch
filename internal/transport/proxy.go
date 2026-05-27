@@ -75,7 +75,10 @@ func (t *interceptingTransport) RoundTrip(req *http.Request) (*http.Response, er
 		
 		line := string(bodyBytes)
 		if msg := engine.ParseJSONRPC(line, "IN", t.transportType); msg != nil {
-			t.messages <- msg
+			select {
+			case t.messages <- msg:
+			default:
+			}
 		}
 	}
 
@@ -100,7 +103,10 @@ func (t *interceptingTransport) RoundTrip(req *http.Request) (*http.Response, er
 			res.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 			line := string(bodyBytes)
 			if msg := engine.ParseJSONRPC(line, "OUT", t.transportType); msg != nil {
-				t.messages <- msg
+				select {
+				case t.messages <- msg:
+				default:
+				}
 			}
 		}
 	}
@@ -135,7 +141,10 @@ func (s *sseInterceptor) Read(p []byte) (n int, err error) {
 				payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 				if payload != "" && (strings.HasPrefix(payload, "{") || strings.HasPrefix(payload, "[")) {
 					if msg := engine.ParseJSONRPC(payload, "OUT", s.transType); msg != nil {
-						s.messages <- msg
+						select {
+						case s.messages <- msg:
+						default:
+						}
 					}
 				}
 			}

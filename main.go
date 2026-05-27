@@ -21,7 +21,7 @@ func main() {
 	proxyURL := flag.String("proxy", "", "Proxy to remote MCP server (e.g. \"http://localhost:3000\")")
 	proxyPort := flag.String("proxy-port", "8081", "Local port to bind the proxy server to")
 	pid := flag.Int("pid", 0, "Attach to existing process ID via eBPF")
-	dbPath := flag.String("db", "mcpwatch.db", "Path to SQLite database")
+	dbPath := flag.String("db", "mcpwatch_data", "Path to BadgerDB directory")
 	uiPort := flag.String("ui", "8080", "Port for the UI dashboard")
 	flag.Parse()
 

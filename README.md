@@ -3,7 +3,7 @@ mcpwatch
 a proxy for inspecting Model Context Protocol traffic.
 
 how it works:
-it acts as a middleman. you run mcpwatch wrapping your normal server command. it intercepts the standard input and output streams, records the json-rpc messages, and pipes them through untouched. messages are saved to a local sqlite database. a web interface reads from this database to show you what happened.
+it acts as a middleman. you run mcpwatch wrapping your normal server command. it intercepts the standard input and output streams, records the json-rpc messages, and pipes them through untouched. messages are saved to a local BadgerDB key-value store. a web interface reads from this database to show you what happened.
 
 architecture:
 - a stdio handler for local processes
@@ -22,7 +22,7 @@ open http://localhost:8080 to see the traffic.
 
 whats done:
 we have a basic cli wrapper for intercepting standard input and output.
-we are successfully saving all intercepted json messages to a local sqlite database.
+we are successfully saving all intercepted json messages to a local BadgerDB key-value store.
 we have a simple web ui that serves an api endpoint showing recent traffic.
 we have the foundation for our correlator and modular transports in the internal folder.
 
@@ -31,7 +31,7 @@ no frameworks. plain html, css, js only. keep the dom as flat as possible. manag
 
 toolchain:
 - go 1.22
-- modernc.org/sqlite (pure go sqlite driver, no cgo needed)
+- github.com/dgraph-io/badger/v4 (blazing fast LSM-tree key-value store)
 - nhooyr.io/websocket (minimal websocket server for live dashboard updates)
 - cilium/ebpf (loading and attaching ebpf programs from go, linux only)
 - clang + llvm (compiling the ebpf C code to bytecode, linux only)
@@ -44,13 +44,13 @@ todos:
 - [x] hook up the correlator to calculate request latency.
 - [x] no graceful shutdown. if you ctrl-c the process, the sqlite database, child process, and websocket connections are not cleaned up properly.
 - [ ] update remote proxy logic to use the current Streamable HTTP (ND-JSON) standard.
-- [ ] fix the correlator memory leak. go maps don't shrink so bursty traffic will bloat the heap permanently.
+- [x] fix the correlator memory leak. go maps don't shrink so bursty traffic will bloat the heap permanently.
 - [ ] implement websocket streaming for live web ui updates.
 - [ ] finish advanced analytics like error tracking and deep payload inspection.
 - [ ] write and compile the actual eBPF C code for the kernel. the Go side is wired up but there is no tracer.c yet.
 - [ ] abstract the parser behind a proper interface.
 - [ ] zero test coverage. there are no unit tests for the correlator, parser, storage, or hub. need table-driven tests at minimum.
-- [ ] the messages channel in the transport handlers is unbuffered or has a fixed size. if the consumer is slow the sender goroutines will block silently and freeze the proxy.
+- [x] the messages channel in the transport handlers is unbuffered or has a fixed size. if the consumer is slow the sender goroutines will block silently and freeze the proxy.
 - [ ] no structured logging. everything uses raw fmt.Fprintf or log.Printf with no log levels. need at least debug/info/error levels.
 - [ ] no configuration file support. everything is hardcoded or passed as cli flags. should support a config file for complex setups.
 - [ ] no way to export or clear the database. users can't dump the audit log to json or csv, and can't reset it without deleting the file.
@@ -59,6 +59,6 @@ todos:
 - [ ] no CI pipeline. no github actions for build, test, or release.
 - [ ] no versioning. the binary has no --version flag and no build-time version injection.
 - [ ] no health check endpoint. there is no way for monitoring systems to verify mcpwatch is alive.
-- [ ] the storage layer silently ignores scan errors in QueryRecent (line 98 just does continue). bad rows are dropped with no logging.
-- [ ] sqlite writes are synchronous one-at-a-time inserts. should use a buffer + async drain pattern to batch inserts in a single transaction on a timer or size threshold. way faster, keeps the proxy path non-blocking.
+- [x] the storage layer silently ignores scan errors in QueryRecent (line 98 just does continue). bad rows are dropped with no logging.
+- [x] sqlite writes are synchronous one-at-a-time inserts. should use a buffer + async drain pattern to batch inserts in a single transaction on a timer or size threshold. way faster, keeps the proxy path non-blocking.
 - [ ] replace gorilla/websocket with nhooyr.io/websocket since gorilla is archived and nhooyr is smaller and natively supports context.
