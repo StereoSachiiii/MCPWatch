@@ -47,7 +47,16 @@ func ParseJSONRPC(raw, direction, transport string) *Message {
 	if errData, ok := obj["error"]; ok {
 		data, _ := json.Marshal(errData)
 		msg.ErrorData = string(data)
+		if errMap, ok := errData.(map[string]interface{}); ok {
+			if code, ok := errMap["code"]; ok {
+				msg.ErrorCode = fmt.Sprintf("%v", code)
+			}
+		}
 	}
+
+	// Calculate analytics metrics
+	msg.SizeBytes = int64(len(raw))
+	msg.TokenEstimate = msg.SizeBytes / 4 // Heuristic: ~4 characters per token
 
 	// Classify message type
 	switch {

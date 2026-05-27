@@ -43,6 +43,14 @@
                 <div class="stat-label">Errors</div>
                 <div class="stat-value red" id="stat-errors">0</div>
             </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Volume</div>
+                <div class="stat-value purple" id="stat-volume">0 B</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Token Estimate</div>
+                <div class="stat-value cyan" id="stat-tokens">0</div>
+            </div>
         </div>
 
         <!-- Filters -->
@@ -53,6 +61,7 @@
             <button class="filter-btn" data-transport="stdio">stdio</button>
             <button class="filter-btn" data-transport="sse">sse</button>
             <button class="filter-btn" data-transport="http">http</button>
+            <button class="filter-btn" data-transport="ebpf">ebpf</button>
         </div>
 
         <!-- Timeline -->

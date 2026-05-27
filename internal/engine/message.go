@@ -14,6 +14,9 @@ type Message struct {
 	Params    string    `json:"params"`
 	Result    string    `json:"result"`
 	ErrorData string    `json:"error_data"`
-	LatencyMS int64     `json:"latency_ms"`
-	Raw       string    `json:"raw"`
+	LatencyMS     int64     `json:"latency_ms"`
+	SizeBytes     int64     `json:"size_bytes"`
+	TokenEstimate int64     `json:"token_estimate"`
+	ErrorCode     string    `json:"error_code"`
+	Raw           string    `json:"raw"`
 }

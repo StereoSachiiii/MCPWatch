@@ -20,11 +20,12 @@
     const statusText = $('#status-text');
     const clientCount = $('#client-count');
 
-    // Stats elements
     const statTotal = $('#stat-total');
     const statRequests = $('#stat-requests');
     const statLatency = $('#stat-latency');
     const statErrors = $('#stat-errors');
+    const statVolume = $('#stat-volume');
+    const statTokens = $('#stat-tokens');
 
     // ── WebSocket Connection ──
     function connect() {
@@ -131,6 +132,10 @@
                 </span>`;
         }
 
+        const sizeStr = formatBytes(msg.size_bytes || 0);
+        const tokenStr = msg.token_estimate ? `${msg.token_estimate} tkn` : '';
+        const errorCodeStr = msg.error_code ? `Err: ${msg.error_code}` : '';
+
         // Build expandable body
         const bodyParts = [];
         if (msg.params && msg.params !== 'null') {
@@ -157,6 +162,9 @@
                 <div class="msg-meta">
                     <span>${time}</span>
                     ${latencyHTML}
+                    <span class="msg-size">${sizeStr}</span>
+                    ${tokenStr ? `<span class="msg-tokens">${tokenStr}</span>` : ''}
+                    ${errorCodeStr ? `<span class="msg-error-code">${errorCodeStr}</span>` : ''}
                     ${msg.jsonrpc_id ? `<span>id: ${escapeHtml(msg.jsonrpc_id)}</span>` : ''}
                 </div>
                 <div class="msg-body">${bodyParts.join('')}</div>
@@ -250,6 +258,8 @@
             statRequests.textContent = data.total_requests || 0;
             statLatency.textContent = data.avg_latency_ms ? data.avg_latency_ms.toFixed(1) + 'ms' : '—';
             statErrors.textContent = data.total_errors || 0;
+            statVolume.textContent = formatBytes(data.total_bytes || 0);
+            statTokens.textContent = formatNumber(data.total_tokens || 0);
         } catch { /* ignore */ }
     }
 
@@ -268,6 +278,24 @@
         } catch {
             return ts;
         }
+    }
+
+    function formatBytes(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    function formatNumber(num) {
+        if (num >= 1000000) {
+            return (num / 1000000).toFixed(1) + 'M';
+        }
+        if (num >= 1000) {
+            return (num / 1000).toFixed(1) + 'K';
+        }
+        return num.toString();
     }
 
     function escapeHtml(str) {

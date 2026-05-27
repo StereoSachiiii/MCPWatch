@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
 
 	"mcpwatch/internal/storage"
 
@@ -25,7 +26,18 @@ func New(store *storage.Store, hub *Hub, webFS fs.FS) *Server {
 		store: store,
 		hub:   hub,
 		upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool { return true },
+			CheckOrigin: func(r *http.Request) bool {
+				origin := r.Header.Get("Origin")
+				if origin == "" {
+					return true
+				}
+				u, err := url.Parse(origin)
+				if err != nil {
+					return false
+				}
+				host := u.Hostname()
+				return host == "localhost" || host == "127.0.0.1" || u.Host == r.Host
+			},
 		},
 		webFS: webFS,
 	}
@@ -76,7 +88,6 @@ func (s *Server) handleInteractions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	json.NewEncoder(w).Encode(messages)
 }
 
@@ -88,6 +99,5 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	json.NewEncoder(w).Encode(stats)
 }
