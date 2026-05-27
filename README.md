@@ -62,3 +62,10 @@ todos:
 - [x] the storage layer silently ignores scan errors in QueryRecent (line 98 just does continue). bad rows are dropped with no logging.
 - [x] sqlite writes are synchronous one-at-a-time inserts. should use a buffer + async drain pattern to batch inserts in a single transaction on a timer or size threshold. way faster, keeps the proxy path non-blocking.
 - [ ] replace gorilla/websocket with nhooyr.io/websocket since gorilla is archived and nhooyr is smaller and natively supports context.
+- [ ] make gc very aggressive, crank up to 30-40% heap target , check if this doesnt actualy because a bottleneck, learn how go GC tracks ownership and what makes something eligible for a gc run, make sure it doesnt negatively impact performance.
+- [ ] find if coroutine explosion is actually a real thing, or if its just a myth made by people who are bad at writing go code, test it thoroughly. find if the coroutine can use mutexes and how does that userspace scheduler  cooperate with linux kernel scheduler to prevent coroutine starvation. also find if there is a way to get the number of coroutines in the system. if there isnt, make one. create a utility or something to get the number of coroutines. does # of coroutines reflect the current workload? how does that work> solidify it.
+- [ ] Why is go using SIGURG??? how does that map into my code.
+
+- [ ] remember how to implement a concurrent skip list
+
+- [ ] dont have to know everything, just what happens to my data , how it gets bounced/ moved/copied around the userspace and who owns the resources, how its scheduled , why is  badger  beyond just memory buffer and kv architecture
