@@ -1,190 +1,123 @@
 package main
 
 import (
-	"bufio"
-	"database/sql"
-	"encoding/json"
+	"context"
 	"flag"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"os"
-	"os/exec"
-	"strings"
+	"os/signal"
+	"syscall"
 
-	_ "modernc.org/sqlite"
-)
-
-type Interaction struct {
-	Timestamp string `json:"timestamp"`
-	Direction string `json:"direction"`
-	Method    string `json:"method"`
-	Params    string `json:"params"`
-	Result    string `json:"result"`
-	LatencyMS int64  `json:"latency_ms"`
-	Raw       string `json:"raw"`
-}
-
-var (
-	db       *sql.DB
-	logChan  = make(chan *Interaction, 100)
+	"mcpwatch/internal/engine"
+	"mcpwatch/internal/server"
+	"mcpwatch/internal/storage"
+	"mcpwatch/internal/transport"
+	"mcpwatch/web"
 )
 
 func main() {
 	wrapCmd := flag.String("wrap", "", "Command to wrap (e.g. \"node server.js\")")
+	proxyURL := flag.String("proxy", "", "Proxy to remote MCP server (e.g. \"http://localhost:3000\")")
+	proxyPort := flag.String("proxy-port", "8081", "Local port to bind the proxy server to")
+	pid := flag.Int("pid", 0, "Attach to existing process ID via eBPF")
 	dbPath := flag.String("db", "mcpwatch.db", "Path to SQLite database")
 	uiPort := flag.String("ui", "8080", "Port for the UI dashboard")
 	flag.Parse()
 
-	if *wrapCmd == "" {
-		fmt.Println("Usage: mcpwatch --wrap \"command args\" [--ui port]")
+	// 1. Validate arguments (only one transport mode allowed)
+	modes := 0
+	if *wrapCmd != "" {
+		modes++
+	}
+	if *proxyURL != "" {
+		modes++
+	}
+	if *pid != 0 {
+		modes++
+	}
+
+	if modes != 1 {
+		fmt.Println("Usage: mcpwatch [mode] [--db path] [--ui port]")
+		fmt.Println("\nYou must specify EXACTLY ONE mode:")
+		fmt.Println("  --wrap \"command args\"   Run and intercept stdio of a local command")
+		fmt.Println("  --proxy \"url\"           Proxy and intercept HTTP/SSE to a remote server")
+		fmt.Println("  --pid 1234              Attach and intercept via eBPF to an existing process (Linux only)")
 		os.Exit(1)
 	}
 
-	initDB(*dbPath)
-	defer db.Close()
+	// 2. Setup Context for Graceful Shutdown
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
 
-	// Start background logger
-	go backgroundLogger()
-
-	// Start UI server
-	go startUIServer(*uiPort)
-
-	fmt.Fprintf(os.Stderr, "[MCPWatch] Wrapping: %s\n", *wrapCmd)
-	fmt.Fprintf(os.Stderr, "[MCPWatch] UI Dashboard: http://localhost:%s\n", *uiPort)
-	runStdioProxy(*wrapCmd)
-}
-
-func initDB(path string) {
-	var err error
-	db, err = sql.Open("sqlite", path)
+	// 3. Initialize Storage
+	store, err := storage.New(*dbPath)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("[MCPWatch] failed to init database: %v", err)
 	}
+	defer store.Close()
 
-	// Enable WAL mode for better concurrency
-	_, err = db.Exec("PRAGMA journal_mode=WAL;")
-	if err != nil {
-		log.Fatal(err)
-	}
+	// 4. Initialize Correlator
+	correlator := engine.NewCorrelator()
 
-	schema := `
-	CREATE TABLE IF NOT EXISTS interactions (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-		direction TEXT,
-		method TEXT,
-		params TEXT,
-		result TEXT,
-		latency_ms INTEGER,
-		raw TEXT
-	);`
-	_, err = db.Exec(schema)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-func backgroundLogger() {
-	for i := range logChan {
-		_, err := db.Exec(`
-			INSERT INTO interactions (direction, method, params, result, raw)
-			VALUES (?, ?, ?, ?, ?)`,
-			i.Direction, i.Method, i.Params, i.Result, i.Raw)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "[MCPWatch] DB Error: %v\n", err)
-		}
-	}
-}
-
-func runStdioProxy(commandStr string) {
-	parts := strings.Fields(commandStr)
-	cmd := exec.Command(parts[0], parts[1:]...)
-
-	stdin, _ := cmd.StdinPipe()
-	stdout, _ := cmd.StdoutPipe()
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Start(); err != nil {
-		log.Fatal(err)
-	}
-
-	// Capture Client -> Server (stdin)
+	// 5. Initialize Server (Hub and API)
+	hub := server.NewHub()
+	srv := server.New(store, hub, web.Assets)
+	
+	// Start server in background
 	go func() {
-		reader := io.TeeReader(os.Stdin, stdin)
-		scanner := bufio.NewScanner(reader)
-		for scanner.Scan() {
-			line := scanner.Text()
-			queueLog("IN", line)
+		if err := srv.Start(*uiPort); err != nil {
+			log.Printf("[MCPWatch] server stopped: %v", err)
 		}
 	}()
 
-	// Capture Server -> Client (stdout)
-	reader := io.TeeReader(stdout, os.Stdout)
-	scanner := bufio.NewScanner(reader)
-	for scanner.Scan() {
-		line := scanner.Text()
-		queueLog("OUT", line)
+	// 6. Initialize Transport Handler
+	var handler transport.Handler
+	if *wrapCmd != "" {
+		handler = transport.NewStdio(*wrapCmd)
+	} else if *proxyURL != "" {
+		handler = transport.NewProxy(*proxyURL, *proxyPort)
+	} else if *pid != 0 {
+		handler = transport.NewEBPF(*pid)
 	}
 
-	cmd.Wait()
-	close(logChan)
-}
+	// 7. Start Transport
+	messages := make(chan *engine.Message, 1000)
+	errChan := make(chan error, 1)
+	
+	go func() {
+		log.Printf("[MCPWatch] Starting transport: %s", handler.Type())
+		errChan <- handler.Start(ctx, messages)
+	}()
 
-func queueLog(direction, raw string) {
-	var msg map[string]interface{}
-	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
-		return
-	}
+	// 8. The Central Event Loop
+	log.Println("[MCPWatch] Core orchestrator running. Press Ctrl-C to stop.")
+	for {
+		select {
+		case msg := <-messages:
+			if msg == nil {
+				continue
+			}
+			// Run Correlator logic
+			correlator.Process(msg)
+			
+			// Store in Database
+			if err := store.Insert(msg); err != nil {
+				log.Printf("[MCPWatch] failed to insert message: %v", err)
+			}
 
-	method, _ := msg["method"].(string)
-	params, _ := json.Marshal(msg["params"])
-	result, _ := json.Marshal(msg["result"])
+			// Broadcast to Web UI via WebSockets
+			hub.Broadcast(msg)
 
-	logChan <- &Interaction{
-		Direction: direction,
-		Method:    method,
-		Params:    string(params),
-		Result:    string(result),
-		Raw:       raw,
-	}
-}
-
-func startUIServer(port string) {
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "./web/index.html")
-	})
-
-	http.HandleFunc("/api/interactions", func(w http.ResponseWriter, r *http.Request) {
-		rows, err := db.Query("SELECT id, timestamp, direction, method, params, result, raw FROM interactions ORDER BY id DESC LIMIT 50")
-		if err != nil {
-			http.Error(w, err.Error(), 500)
+		case err := <-errChan:
+			if err != nil {
+				log.Printf("[MCPWatch] Transport error: %v", err)
+			}
+			cancel() // trigger shutdown
+			
+		case <-ctx.Done():
+			log.Println("\n[MCPWatch] Shutting down gracefully...")
 			return
 		}
-		defer rows.Close()
-
-		var results []map[string]interface{}
-		for rows.Next() {
-			var id int
-			var ts, dir, method, params, result, raw string
-			rows.Scan(&id, &ts, &dir, &method, &params, &result, &raw)
-
-			item := map[string]interface{}{
-				"id":        id,
-				"timestamp": ts,
-				"direction": dir,
-				"method":    method,
-				"params":    json.RawMessage(params),
-				"result":    json.RawMessage(result),
-				"raw":       raw,
-			}
-			results = append(results, item)
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(results)
-	})
-
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	}
 }

@@ -1,41 +1,64 @@
-# MCPWatch — The Universal Agent Inspector
+mcpwatch
 
-MCPWatch is a transparent, non-intrusive observability proxy for the Model Context Protocol (MCP). It acts as a universal "Flight Recorder" for AI agents, capturing JSON-RPC interactions and providing a live, real-time inspection dashboard.
+a proxy for inspecting Model Context Protocol traffic.
 
-## Current Features (Phases 1-3)
-- **Zero-Config Wrapping**: Wrap any existing MCP server (`mcpwatch --wrap "node server.js"`) to instantly monitor traffic without modifying the server.
-- **Remote Proxying (SSE/HTTP)**: Transparently proxy and inspect traffic for HTTP and Server-Sent Events (SSE) based MCP servers using a reverse proxy.
-- **eBPF Interception (Linux)**: Attach to already-running processes without restarting them using eBPF syscall interception (`--pid 1234`).
-- **Stdio Interception**: Transparently proxies `stdin` and `stdout` while capturing the JSON-RPC stream.
-- **JSON-RPC Correlation**: Automatically correlates requests and responses via JSON-RPC IDs to calculate exact execution latency.
-- **Persistent Audit Log**: All traffic is saved to a local SQLite database (`mcpwatch.db`) in WAL mode for high concurrency.
-- **Cyber-Audit Dashboard**: A premium, real-time web dashboard (default: `http://localhost:8080`) built with glassmorphism aesthetics.
-- **WebSocket Streaming**: Live push updates to the dashboard — see traffic as it happens.
-- **Self-Contained**: The web UI is embedded directly into the Go binary. No external dependencies.
+how it works:
+it acts as a middleman. you run mcpwatch wrapping your normal server command. it intercepts the standard input and output streams, records the json-rpc messages, and pipes them through untouched. messages are saved to a local sqlite database. a web interface reads from this database to show you what happened.
 
-## Upcoming Features (Roadmap)
-- **Phase 4 — Advanced Analytics**: Deeper latency metrics, error rate tracking, and payload inspection tools.
+architecture:
+- a stdio handler for local processes
+- a remote proxy handler for streamable http (nd-json)
+- an ebpf handler for attaching to already-running linux processes
+- a correlator to match requests with responses and track latency
 
-## Setup
-```bash
+setup:
 go mod tidy
-go build -o mcpwatch.exe ./cmd/mcpwatch
-```
+go build -o mcpwatch.exe .
 
-## Usage
-Wrap your server command:
-```bash
+usage:
 mcpwatch.exe --wrap "node your_mcp_server.js" --ui 8080
-```
 
-Proxy a remote HTTP/SSE server:
-```bash
-mcpwatch.exe --proxy "http://localhost:3001" --port 3000 --ui 8080
-```
+open http://localhost:8080 to see the traffic.
 
-Attach to a running PID (Linux only):
-```bash
-mcpwatch --pid 1234 --ui 8080
-```
+whats done:
+we have a basic cli wrapper for intercepting standard input and output.
+we are successfully saving all intercepted json messages to a local sqlite database.
+we have a simple web ui that serves an api endpoint showing recent traffic.
+we have the foundation for our correlator and modular transports in the internal folder.
 
-Then open `http://localhost:8080` in your browser to monitor traffic in real time.
+frontend philosophy:
+no frameworks. plain html, css, js only. keep the dom as flat as possible. manage state up top in js and push updates directly to the dom. this keeps rendering fast for real-time websocket traffic and avoids any build pipeline. the entire ui ships embedded in the go binary as a single file.
+
+toolchain:
+- go 1.22
+- modernc.org/sqlite (pure go sqlite driver, no cgo needed)
+- nhooyr.io/websocket (minimal websocket server for live dashboard updates)
+- cilium/ebpf (loading and attaching ebpf programs from go, linux only)
+- clang + llvm (compiling the ebpf C code to bytecode, linux only)
+- go embed (embedding the web ui into the binary)
+- no node, no npm, no frontend build step
+
+todos:
+- integrate the internal packages with main.go. right now main.go is a separate monolith ignoring the internal folder.
+- add the missing cli flags for proxy and ebpf modes.
+- update remote proxy logic to use the current Streamable HTTP (ND-JSON) standard.
+- hook up the correlator to calculate request latency.
+- fix the correlator memory leak. go maps don't shrink so bursty traffic will bloat the heap permanently.
+- implement websocket streaming for live web ui updates.
+- finish advanced analytics like error tracking and deep payload inspection.
+- write and compile the actual eBPF C code for the kernel. the Go side is wired up but there is no tracer.c yet.
+- abstract the parser behind a proper interface.
+- zero test coverage. there are no unit tests for the correlator, parser, storage, or hub. need table-driven tests at minimum.
+- no graceful shutdown. if you ctrl-c the process, the sqlite database, child process, and websocket connections are not cleaned up properly.
+- the messages channel in the transport handlers is unbuffered or has a fixed size. if the consumer is slow the sender goroutines will block silently and freeze the proxy.
+- no structured logging. everything uses raw fmt.Fprintf or log.Printf with no log levels. need at least debug/info/error levels.
+- no configuration file support. everything is hardcoded or passed as cli flags. should support a config file for complex setups.
+- no way to export or clear the database. users can't dump the audit log to json or csv, and can't reset it without deleting the file.
+- no authentication on the dashboard. anyone on the network can open port 8080 and see all intercepted traffic.
+- the web ui is served from the filesystem with http.ServeFile. it should be embedded into the binary using go embed so it ships as a single file.
+- no CI pipeline. no github actions for build, test, or release.
+- no versioning. the binary has no --version flag and no build-time version injection.
+- no health check endpoint. there is no way for monitoring systems to verify mcpwatch is alive.
+- the storage layer silently ignores scan errors in QueryRecent (line 98 just does continue). bad rows are dropped with no logging.
+- sqlite writes are synchronous one-at-a-time inserts. should use a buffer + async drain pattern to batch inserts in a single transaction on a timer or size threshold. way faster, keeps the proxy path non-blocking.
+- replace gorilla/websocket with nhooyr.io/websocket since gorilla is archived and nhooyr is smaller and natively supports context.

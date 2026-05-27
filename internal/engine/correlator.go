@@ -37,12 +37,12 @@ func (c *Correlator) Process(msg *Message) {
 	defer c.mu.Unlock()
 
 	switch msg.MsgType {
-	case "request":
+	case MsgTypeRequest:
 		c.pending[msg.JSONRPCID] = pendingRequest{
 			sentAt: msg.Timestamp,
 			method: msg.Method,
 		}
-	case "response":
+	case MsgTypeResponse:
 		if req, ok := c.pending[msg.JSONRPCID]; ok {
 			msg.LatencyMS = time.Since(req.sentAt).Milliseconds()
 			if msg.Method == "" {
