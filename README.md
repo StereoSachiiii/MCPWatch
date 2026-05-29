@@ -47,7 +47,7 @@ todos:
 - [x] fix the correlator memory leak. go maps don't shrink so bursty traffic will bloat the heap permanently.
 - [ ] implement websocket streaming for live web ui updates.
 - [ ] finish advanced analytics like error tracking and deep payload inspection.
-- [ ] write and compile the actual eBPF C code for the kernel. the Go side is wired up but there is no tracer.c yet.
+- [x] write and compile the actual eBPF C code for the kernel. the Go side is wired up but there is no tracer.c yet.
 - [ ] abstract the parser behind a proper interface.
 - [ ] zero test coverage. there are no unit tests for the correlator, parser, storage, or hub. need table-driven tests at minimum.
 - [x] the messages channel in the transport handlers is unbuffered or has a fixed size. if the consumer is slow the sender goroutines will block silently and freeze the proxy.
