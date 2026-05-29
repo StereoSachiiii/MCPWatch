@@ -31,7 +31,7 @@ no frameworks. plain html, css, js only. keep the dom as flat as possible. manag
 
 toolchain:
 - go 1.22
-- github.com/dgraph-io/badger/v4 (blazing fast LSM-tree key-value store)
+- github.com/dgraph-io/badger/v4 (blazing fast LSM-tree key-value )
 - nhooyr.io/websocket (minimal websocket server for live dashboard updates)
 - cilium/ebpf (loading and attaching ebpf programs from go, linux only)
 - clang + llvm (compiling the ebpf C code to bytecode, linux only)

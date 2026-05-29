@@ -12,29 +12,29 @@ import (
 	"mcpwatch/internal/engine"
 )
 
-// StdioHandler wraps a child process and intercepts its stdin/stdout pipes.
+
 type StdioHandler struct {
 	command string
 }
 
-// NewStdio creates a new StdioHandler for the given command string.
+
 func NewStdio(command string) *StdioHandler {
 	return &StdioHandler{command: command}
 }
 
-// Type returns "stdio".
+
 func (h *StdioHandler) Type() string {
 	return "stdio"
 }
 
-// Start launches the child process and intercepts all stdin/stdout traffic.
-// Messages are forwarded transparently while copies are parsed and sent to the channel.
+
+
 func (h *StdioHandler) Start(ctx context.Context, messages chan<- *engine.Message) error {
 	if h.command == "" {
 		return fmt.Errorf("empty command")
 	}
 
-	// Use the OS shell to handle paths with spaces, quoting, etc.
+	
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
 		cmd = exec.CommandContext(ctx, "cmd", "/C", h.command)
@@ -58,7 +58,7 @@ func (h *StdioHandler) Start(ctx context.Context, messages chan<- *engine.Messag
 		return fmt.Errorf("start command: %w", err)
 	}
 
-	// Client → Server (stdin interception)
+	
 	go func() {
 		reader := io.TeeReader(os.Stdin, stdinPipe)
 		scanner := bufio.NewScanner(reader)
@@ -75,7 +75,7 @@ func (h *StdioHandler) Start(ctx context.Context, messages chan<- *engine.Messag
 		stdinPipe.Close()
 	}()
 
-	// Server → Client (stdout interception)
+	
 	reader := io.TeeReader(stdoutPipe, os.Stdout)
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)

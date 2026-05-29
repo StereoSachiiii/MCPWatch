@@ -8,7 +8,7 @@ import (
 	"mcpwatch/internal/engine"
 )
 
-// EBPFHandler intercepts JSON-RPC over stdin/stdout for an already running process using eBPF.
+
 type EBPFHandler struct {
 	pid int
 }

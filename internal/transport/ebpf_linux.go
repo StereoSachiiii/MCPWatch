@@ -66,7 +66,7 @@ func (h *EBPFHandler) Start(ctx context.Context, messages chan<- *engine.Message
 	}
 	defer tpReadExit.Close()
 
-	rd, err := perf.NewReader(objs.Events, 8192*4) // increase reader buffer for large chunks
+	rd, err := perf.NewReader(objs.Events, 8192*4) 
 	if err != nil {
 		return fmt.Errorf("creating perf event reader: %w", err)
 	}
@@ -80,8 +80,8 @@ func (h *EBPFHandler) Start(ctx context.Context, messages chan<- *engine.Message
 	}()
 
 	var event dataEvent
+
 	
-	// Separate buffers for stdin and stdout
 	inStream := &streamBuffer{}
 	outStream := &streamBuffer{}
 
@@ -106,15 +106,15 @@ func (h *EBPFHandler) Start(ctx context.Context, messages chan<- *engine.Message
 		}
 
 		payloadChunk := event.Payload[:event.Size]
-		
-		if event.Fd == 0 { // stdin
+
+		if event.Fd == 0 { 
 			inStream.buf.Write(payloadChunk)
 			for _, jsonStr := range inStream.extractJSON() {
 				if msg := engine.ParseJSONRPC(jsonStr, "IN", h.Type()); msg != nil {
 					messages <- msg
 				}
 			}
-		} else if event.Fd == 1 { // stdout
+		} else if event.Fd == 1 { 
 			outStream.buf.Write(payloadChunk)
 			for _, jsonStr := range outStream.extractJSON() {
 				if msg := engine.ParseJSONRPC(jsonStr, "OUT", h.Type()); msg != nil {

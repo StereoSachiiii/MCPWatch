@@ -14,7 +14,7 @@ import (
 	"mcpwatch/internal/engine"
 )
 
-// ProxyHandler proxies HTTP and SSE traffic to a remote MCP server and intercepts JSON-RPC.
+
 type ProxyHandler struct {
 	targetURL string
 	localPort string
@@ -68,11 +68,11 @@ type interceptingTransport struct {
 }
 
 func (t *interceptingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Intercept Request (Client -> Server)
+
 	if req.Body != nil {
 		bodyBytes, _ := io.ReadAll(req.Body)
 		req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-		
+
 		line := string(bodyBytes)
 		if msg := engine.ParseJSONRPC(line, "IN", t.transportType); msg != nil {
 			select {
@@ -87,18 +87,18 @@ func (t *interceptingTransport) RoundTrip(req *http.Request) (*http.Response, er
 		return res, err
 	}
 
-	// Intercept Response (Server -> Client)
+	
 	if res.Body != nil {
 		contentType := res.Header.Get("Content-Type")
 		if strings.HasPrefix(contentType, "text/event-stream") {
-			// SSE Stream
+
 			res.Body = &sseInterceptor{
 				ReadCloser: res.Body,
 				messages:   t.messages,
 				transType:  t.transportType,
 			}
 		} else {
-			// Standard HTTP Response (e.g. POST replies)
+
 			bodyBytes, _ := io.ReadAll(res.Body)
 			res.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 			line := string(bodyBytes)
@@ -135,7 +135,7 @@ func (s *sseInterceptor) Read(p []byte) (n int, err error) {
 			}
 			line := string(s.buf[:idx])
 			s.buf = s.buf[idx+1:]
-			
+
 			line = strings.TrimSpace(line)
 			if strings.HasPrefix(line, "data:") {
 				payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))

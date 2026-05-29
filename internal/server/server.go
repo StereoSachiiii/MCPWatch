@@ -12,7 +12,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// Server provides the HTTP API, WebSocket endpoint, and static file serving.
+
 type Server struct {
 	store    *storage.Store
 	hub      *Hub
@@ -20,7 +20,7 @@ type Server struct {
 	webFS    fs.FS
 }
 
-// New creates a new Server instance.
+
 func New(store *storage.Store, hub *Hub, webFS fs.FS) *Server {
 	return &Server{
 		store: store,
@@ -43,18 +43,18 @@ func New(store *storage.Store, hub *Hub, webFS fs.FS) *Server {
 	}
 }
 
-// Start begins serving on the given port. Blocks until error.
+
 func (s *Server) Start(port string) error {
 	mux := http.NewServeMux()
 
-	// WebSocket endpoint
+	
 	mux.HandleFunc("/ws", s.handleWebSocket)
 
-	// REST API
+	
 	mux.HandleFunc("/api/interactions", s.handleInteractions)
 	mux.HandleFunc("/api/stats", s.handleStats)
 
-	// Static files (dashboard)
+	
 	mux.Handle("/", http.FileServer(http.FS(s.webFS)))
 
 	addr := ":" + port
@@ -71,7 +71,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	client := s.hub.Register(conn)
 
-	// Read loop keeps connection alive; detects client disconnect
+	
 	for {
 		if _, _, err := conn.ReadMessage(); err != nil {
 			s.hub.Unregister(client)

@@ -8,8 +8,8 @@ import (
 func TestExtractJSON(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    []string // chunks to write sequentially
-		expected []string // expected messages extracted
+		input    []string 
+		expected []string 
 	}{
 		{
 			name:     "Single complete object",

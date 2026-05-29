@@ -2,7 +2,7 @@ package engine
 
 import "time"
 
-// MsgType represents the type of JSON-RPC message.
+
 type MsgType string
 
 const (
@@ -11,13 +11,13 @@ const (
 	MsgTypeNotification MsgType = "notification"
 )
 
-// Message represents a parsed JSON-RPC interaction intercepted by MCPWatch.
+
 type Message struct {
 	ID        int64     `json:"id"`
 	Timestamp time.Time `json:"timestamp"`
-	Transport string    `json:"transport"`  // stdio, sse, http, ebpf
-	Direction string    `json:"direction"`  // IN (client→server), OUT (server→client)
-	MsgType   MsgType   `json:"msg_type"`   // request, response, notification
+	Transport string    `json:"transport"`  
+	Direction string    `json:"direction"`  
+	MsgType   MsgType   `json:"msg_type"`   
 	Method    string    `json:"method"`
 	JSONRPCID string    `json:"jsonrpc_id"`
 	Params    string    `json:"params"`
