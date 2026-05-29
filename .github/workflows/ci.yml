@@ -1,0 +1,48 @@
+name: Go CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: [ '1.24.x' ]
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Setup Go ${{ matrix.go-version }}
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.go-version }}
+        cache: true
+
+    - name: Install Dependencies
+      run: go mod download
+
+    - name: Verify formatting
+      run: if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then exit 1; fi
+
+    - name: Run Tests
+      run: go test -v -race ./...
+
+    - name: Build Binary (Linux)
+      run: go build -v -o mcpwatch .
+
+    - name: Build Binary (Windows)
+      env:
+        GOOS: windows
+        GOARCH: amd64
+      run: go build -v -o mcpwatch.exe .
+
+    - name: Build Binary (macOS)
+      env:
+        GOOS: darwin
+        GOARCH: amd64
+      run: go build -v -o mcpwatch-darwin .

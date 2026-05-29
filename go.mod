@@ -5,7 +5,7 @@ go 1.24.0
 require (
 	github.com/cilium/ebpf v0.21.0
 	github.com/dgraph-io/badger/v4 v4.9.1
-	github.com/gorilla/websocket v1.5.3
+	nhooyr.io/websocket v1.8.11
 )
 
 require (

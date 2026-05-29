@@ -1,11 +1,13 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"sync"
+	"time"
 
-	"github.com/gorilla/websocket"
+	"nhooyr.io/websocket"
 )
 
 
@@ -19,12 +21,15 @@ type Client struct {
 func (c *Client) writePump() {
 	defer func() {
 		c.hub.Unregister(c)
-		c.conn.Close()
+		c.conn.Close(websocket.StatusNormalClosure, "")
 	}()
 	for msg := range c.send {
-		if err := c.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := c.conn.Write(ctx, websocket.MessageText, msg); err != nil {
+			cancel()
 			return
 		}
+		cancel()
 	}
 }
 

@@ -56,12 +56,12 @@ todos:
 - [ ] no way to export or clear the database. users can't dump the audit log to json or csv, and can't reset it without deleting the file.
 - [ ] no authentication on the dashboard. anyone on the network can open port 8080 and see all intercepted traffic.
 - [x] the web ui is served from the filesystem with http.ServeFile. it should be embedded into the binary using go embed so it ships as a single file.
-- [ ] no CI pipeline. no github actions for build, test, or release.
+- [x] no CI pipeline. no github actions for build, test, or release.
 - [ ] no versioning. the binary has no --version flag and no build-time version injection.
 - [ ] no health check endpoint. there is no way for monitoring systems to verify mcpwatch is alive.
 - [x] the storage layer silently ignores scan errors in QueryRecent (line 98 just does continue). bad rows are dropped with no logging.
 - [x] sqlite writes are synchronous one-at-a-time inserts. should use a buffer + async drain pattern to batch inserts in a single transaction on a timer or size threshold. way faster, keeps the proxy path non-blocking.
-- [ ] replace gorilla/websocket with nhooyr.io/websocket since gorilla is archived and nhooyr is smaller and natively supports context.
+- [x] replace gorilla/websocket with nhooyr.io/websocket since gorilla is archived and nhooyr is smaller and natively supports context.
 - [ ] make gc very aggressive, crank up to 30-40% heap target , check if this doesnt actualy because a bottleneck, learn how go GC tracks ownership and what makes something eligible for a gc run, make sure it doesnt negatively impact performance.
 - [ ] find if coroutine explosion is actually a real thing, or if its just a myth made by people who are bad at writing go code, test it thoroughly. find if the coroutine can use mutexes and how does that userspace scheduler  cooperate with linux kernel scheduler to prevent coroutine starvation. also find if there is a way to get the number of coroutines in the system. if there isnt, make one. create a utility or something to get the number of coroutines. does # of coroutines reflect the current workload? how does that work> solidify it.
 - [ ] Why is go using SIGURG??? how does that map into my code.
