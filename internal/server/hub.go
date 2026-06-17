@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -76,7 +76,7 @@ func (h *Hub) Unregister(client *Client) {
 func (h *Hub) Broadcast(data interface{}) {
 	payload, err := json.Marshal(data)
 	if err != nil {
-		log.Printf("[MCPWatch] broadcast marshal error: %v", err)
+		slog.Error("broadcast marshal error", "error", err)
 		return
 	}
 

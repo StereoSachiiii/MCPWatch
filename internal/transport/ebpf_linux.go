@@ -6,8 +6,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/perf"
@@ -17,11 +18,12 @@ import (
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang tracer bpf/tracer.c -- -I../headers
 
 type EBPFHandler struct {
-	pid int
+	pid    int
+	parser engine.Parser
 }
 
-func NewEBPF(pid int) *EBPFHandler {
-	return &EBPFHandler{pid: pid}
+func NewEBPF(pid int, parser engine.Parser) *EBPFHandler {
+	return &EBPFHandler{pid: pid, parser: parser}
 }
 
 func (h *EBPFHandler) Type() string {
@@ -34,7 +36,7 @@ type dataEvent struct {
 	Payload [4096]byte
 }
 func (h *EBPFHandler) Start(ctx context.Context, messages chan<- *engine.Message) error {
-	log.Printf("[MCPWatch-eBPF] Attaching to PID %d via eBPF tracepoints...\n", h.pid)
+	slog.Info("Attaching to PID via eBPF tracepoints", "pid", h.pid)
 
 	objs := tracerObjects{}
 	if err := loadTracerObjects(&objs, nil); err != nil {
@@ -72,7 +74,7 @@ func (h *EBPFHandler) Start(ctx context.Context, messages chan<- *engine.Message
 	}
 	defer rd.Close()
 
-	log.Println("[MCPWatch-eBPF] Successfully attached Full-Duplex eBPF hooks. Listening for events...")
+	slog.Info("Successfully attached Full-Duplex eBPF hooks. Listening for events...")
 
 	go func() {
 		<-ctx.Done()
@@ -88,20 +90,20 @@ func (h *EBPFHandler) Start(ctx context.Context, messages chan<- *engine.Message
 	for {
 		record, err := rd.Read()
 		if err != nil {
-			if perf.IsClosed(err) {
+			if errors.Is(err, perf.ErrClosed) {
 				return nil
 			}
-			log.Printf("reading from perf event reader: %v", err)
+			slog.Error("reading from perf event reader", "error", err)
 			continue
 		}
 
 		if record.LostSamples > 0 {
-			log.Printf("perf event ring buffer full, dropped %d samples", record.LostSamples)
+			slog.Warn("perf event ring buffer full", "lost_samples", record.LostSamples)
 			continue
 		}
 
 		if err := binary.Read(bytes.NewBuffer(record.RawSample), binary.LittleEndian, &event); err != nil {
-			log.Printf("parsing perf event: %v", err)
+			slog.Error("parsing perf event", "error", err)
 			continue
 		}
 
@@ -110,14 +112,14 @@ func (h *EBPFHandler) Start(ctx context.Context, messages chan<- *engine.Message
 		if event.Fd == 0 { 
 			inStream.buf.Write(payloadChunk)
 			for _, jsonStr := range inStream.extractJSON() {
-				if msg := engine.ParseJSONRPC(jsonStr, "IN", h.Type()); msg != nil {
+				if msg := h.parser.Parse(jsonStr, "IN", h.Type()); msg != nil {
 					messages <- msg
 				}
 			}
 		} else if event.Fd == 1 { 
 			outStream.buf.Write(payloadChunk)
 			for _, jsonStr := range outStream.extractJSON() {
-				if msg := engine.ParseJSONRPC(jsonStr, "OUT", h.Type()); msg != nil {
+				if msg := h.parser.Parse(jsonStr, "OUT", h.Type()); msg != nil {
 					messages <- msg
 				}
 			}

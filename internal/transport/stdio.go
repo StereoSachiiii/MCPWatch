@@ -15,11 +15,12 @@ import (
 
 type StdioHandler struct {
 	command string
+	parser  engine.Parser
 }
 
 
-func NewStdio(command string) *StdioHandler {
-	return &StdioHandler{command: command}
+func NewStdio(command string, parser engine.Parser) *StdioHandler {
+	return &StdioHandler{command: command, parser: parser}
 }
 
 
@@ -65,7 +66,7 @@ func (h *StdioHandler) Start(ctx context.Context, messages chan<- *engine.Messag
 		scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 		for scanner.Scan() {
 			line := scanner.Text()
-			if msg := engine.ParseJSONRPC(line, "IN", h.Type()); msg != nil {
+			if msg := h.parser.Parse(line, "IN", h.Type()); msg != nil {
 				select {
 				case messages <- msg:
 				default:
@@ -81,7 +82,7 @@ func (h *StdioHandler) Start(ctx context.Context, messages chan<- *engine.Messag
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if msg := engine.ParseJSONRPC(line, "OUT", h.Type()); msg != nil {
+		if msg := h.parser.Parse(line, "OUT", h.Type()); msg != nil {
 			select {
 			case messages <- msg:
 			default:

@@ -8,6 +8,20 @@ import (
 
 
 
+type Parser interface {
+	Parse(raw, direction, transport string) *Message
+}
+
+type JSONRPCParser struct{}
+
+func NewJSONRPCParser() Parser {
+	return &JSONRPCParser{}
+}
+
+func (p *JSONRPCParser) Parse(raw, direction, transport string) *Message {
+	return ParseJSONRPC(raw, direction, transport)
+}
+
 func ParseJSONRPC(raw, direction, transport string) *Message {
 	var obj map[string]interface{}
 	if err := json.Unmarshal([]byte(raw), &obj); err != nil {

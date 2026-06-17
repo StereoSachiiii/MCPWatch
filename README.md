@@ -45,20 +45,20 @@ todos:
 - [x] no graceful shutdown. if you ctrl-c the process, the sqlite database, child process, and websocket connections are not cleaned up properly.
 - [ ] update remote proxy logic to use the current Streamable HTTP (ND-JSON) standard.
 - [x] fix the correlator memory leak. go maps don't shrink so bursty traffic will bloat the heap permanently.
-- [ ] implement websocket streaming for live web ui updates.
-- [ ] finish advanced analytics like error tracking and deep payload inspection.
+- [x] implement websocket streaming for live web ui updates.
+- [x] finish advanced analytics like error tracking and deep payload inspection.
 - [x] write and compile the actual eBPF C code for the kernel. the Go side is wired up but there is no tracer.c yet.
-- [ ] abstract the parser behind a proper interface.
-- [ ] zero test coverage. there are no unit tests for the correlator, parser, storage, or hub. need table-driven tests at minimum.
+- [x] abstract the parser behind a proper interface.
+- [x] zero test coverage. there are no unit tests for the correlator, parser, storage, or hub. need table-driven tests at minimum.
 - [x] the messages channel in the transport handlers is unbuffered or has a fixed size. if the consumer is slow the sender goroutines will block silently and freeze the proxy.
-- [ ] no structured logging. everything uses raw fmt.Fprintf or log.Printf with no log levels. need at least debug/info/error levels.
-- [ ] no configuration file support. everything is hardcoded or passed as cli flags. should support a config file for complex setups.
-- [ ] no way to export or clear the database. users can't dump the audit log to json or csv, and can't reset it without deleting the file.
-- [ ] no authentication on the dashboard. anyone on the network can open port 8080 and see all intercepted traffic.
+- [x] no structured logging. everything uses raw fmt.Fprintf or log.Printf with no log levels. need at least debug/info/error levels.
+- [x] no configuration file support. everything is hardcoded or passed as cli flags. should support a config file for complex setups.
+- [x] no way to export or clear the database. users can't dump the audit log to json or csv, and can't reset it without deleting the file.
+- [x] no authentication on the dashboard. anyone on the network can open port 8080 and see all intercepted traffic.
 - [x] the web ui is served from the filesystem with http.ServeFile. it should be embedded into the binary using go embed so it ships as a single file.
 - [x] no CI pipeline. no github actions for build, test, or release.
-- [ ] no versioning. the binary has no --version flag and no build-time version injection.
-- [ ] no health check endpoint. there is no way for monitoring systems to verify mcpwatch is alive.
+- [x] no versioning. the binary has no --version flag and no build-time version injection.
+- [x] no health check endpoint. there is no way for monitoring systems to verify mcpwatch is alive.
 - [x] the storage layer silently ignores scan errors in QueryRecent (line 98 just does continue). bad rows are dropped with no logging.
 - [x] sqlite writes are synchronous one-at-a-time inserts. should use a buffer + async drain pattern to batch inserts in a single transaction on a timer or size threshold. way faster, keeps the proxy path non-blocking.
 - [x] replace gorilla/websocket with nhooyr.io/websocket since gorilla is archived and nhooyr is smaller and natively supports context.

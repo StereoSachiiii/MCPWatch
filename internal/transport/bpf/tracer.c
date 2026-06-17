@@ -49,7 +49,7 @@ struct sys_enter_write_args {
     int syscall_nr;
     unsigned int fd;
     const char *buf;
-    size_t count;
+    unsigned long count;
 };
 
 SEC("tracepoint/syscalls/sys_enter_write")
@@ -67,13 +67,13 @@ int trace_write(struct sys_enter_write_args *ctx) {
     struct data_event *e = bpf_map_lookup_elem(&event_buf_map, &key);
     if (!e) return 0;
 
+    unsigned long len = ctx->count;
+    len &= 4095;
+
     e->fd = ctx->fd;
-    e->size = ctx->count;
-    if (e->size > sizeof(e->payload)) {
-        e->size = sizeof(e->payload);
-    }
+    e->size = len;
     
-    bpf_probe_read_user(e->payload, e->size, ctx->buf);
+    bpf_probe_read_user(e->payload, len, ctx->buf);
     bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, e, sizeof(*e));
     
     return 0;
@@ -84,7 +84,7 @@ struct sys_enter_read_args {
     int syscall_nr;
     unsigned int fd;
     const char *buf;
-    size_t count;
+    unsigned long count;
 };
 
 SEC("tracepoint/syscalls/sys_enter_read")
@@ -94,7 +94,9 @@ int trace_read_enter(struct sys_enter_read_args *ctx) {
     if (!target) return 0;
 
     __u64 id = bpf_get_current_pid_tgid();
-    if ((id >> 32) != *target) return 0;
+    __u32 pid = id >> 32;
+
+    if (pid != *target) return 0;
     if (ctx->fd != 0) return 0; // stdin only
 
     const char *buf = ctx->buf;
@@ -123,13 +125,13 @@ int trace_read_exit(struct sys_exit_read_args *ctx) {
     struct data_event *e = bpf_map_lookup_elem(&event_buf_map, &zero);
     if (!e) return 0;
 
-    e->fd = 0;
-    e->size = ctx->ret;
-    if (e->size > sizeof(e->payload)) {
-        e->size = sizeof(e->payload);
-    }
+    unsigned long len = ctx->ret;
+    len &= 4095;
 
-    bpf_probe_read_user(e->payload, e->size, buf);
+    e->fd = 0;
+    e->size = len;
+
+    bpf_probe_read_user(e->payload, len, buf);
     bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, e, sizeof(*e));
 
     return 0;

@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -18,12 +18,14 @@ import (
 type ProxyHandler struct {
 	targetURL string
 	localPort string
+	parser    engine.Parser
 }
 
-func NewProxy(targetURL, localPort string) *ProxyHandler {
+func NewProxy(targetURL, localPort string, parser engine.Parser) *ProxyHandler {
 	return &ProxyHandler{
 		targetURL: targetURL,
 		localPort: localPort,
+		parser:    parser,
 	}
 }
 
@@ -42,6 +44,7 @@ func (h *ProxyHandler) Start(ctx context.Context, messages chan<- *engine.Messag
 		RoundTripper:  http.DefaultTransport,
 		messages:      messages,
 		transportType: h.Type(),
+		parser:        h.parser,
 	}
 
 	server := &http.Server{
@@ -54,7 +57,7 @@ func (h *ProxyHandler) Start(ctx context.Context, messages chan<- *engine.Messag
 		server.Shutdown(context.Background())
 	}()
 
-	log.Printf("[MCPWatch] Proxying HTTP/SSE traffic from :%s to %s\n", h.localPort, h.targetURL)
+	slog.Info("Proxying HTTP/SSE traffic", "local_port", h.localPort, "target_url", h.targetURL)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return err
 	}
@@ -65,6 +68,7 @@ type interceptingTransport struct {
 	http.RoundTripper
 	messages      chan<- *engine.Message
 	transportType string
+	parser        engine.Parser
 }
 
 func (t *interceptingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -74,7 +78,7 @@ func (t *interceptingTransport) RoundTrip(req *http.Request) (*http.Response, er
 		req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
 		line := string(bodyBytes)
-		if msg := engine.ParseJSONRPC(line, "IN", t.transportType); msg != nil {
+		if msg := t.parser.Parse(line, "IN", t.transportType); msg != nil {
 			select {
 			case t.messages <- msg:
 			default:
@@ -96,13 +100,14 @@ func (t *interceptingTransport) RoundTrip(req *http.Request) (*http.Response, er
 				ReadCloser: res.Body,
 				messages:   t.messages,
 				transType:  t.transportType,
+				parser:     t.parser,
 			}
 		} else {
 
 			bodyBytes, _ := io.ReadAll(res.Body)
 			res.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 			line := string(bodyBytes)
-			if msg := engine.ParseJSONRPC(line, "OUT", t.transportType); msg != nil {
+			if msg := t.parser.Parse(line, "OUT", t.transportType); msg != nil {
 				select {
 				case t.messages <- msg:
 				default:
@@ -119,6 +124,7 @@ type sseInterceptor struct {
 	messages  chan<- *engine.Message
 	transType string
 	buf       []byte
+	parser    engine.Parser
 }
 
 func (s *sseInterceptor) Read(p []byte) (n int, err error) {
@@ -140,7 +146,7 @@ func (s *sseInterceptor) Read(p []byte) (n int, err error) {
 			if strings.HasPrefix(line, "data:") {
 				payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 				if payload != "" && (strings.HasPrefix(payload, "{") || strings.HasPrefix(payload, "[")) {
-					if msg := engine.ParseJSONRPC(payload, "OUT", s.transType); msg != nil {
+					if msg := s.parser.Parse(payload, "OUT", s.transType); msg != nil {
 						select {
 						case s.messages <- msg:
 						default:

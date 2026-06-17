@@ -10,11 +10,12 @@ import (
 
 
 type EBPFHandler struct {
-	pid int
+	pid    int
+	parser engine.Parser
 }
 
-func NewEBPF(pid int) *EBPFHandler {
-	return &EBPFHandler{pid: pid}
+func NewEBPF(pid int, parser engine.Parser) *EBPFHandler {
+	return &EBPFHandler{pid: pid, parser: parser}
 }
 
 func (h *EBPFHandler) Type() string {

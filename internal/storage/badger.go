@@ -3,7 +3,7 @@ package storage
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync/atomic"
 	"time"
 
@@ -160,7 +160,7 @@ func (s *Store) flush(batch []*engine.Message) {
 	})
 
 	if err != nil {
-		log.Printf("[MCPWatch] failed to flush to BadgerDB: %v", err)
+		slog.Error("failed to flush to BadgerDB", "error", err)
 	}
 }
 
@@ -189,7 +189,7 @@ func (s *Store) QueryRecent(limit int) ([]*engine.Message, error) {
 				return nil
 			})
 			if err != nil {
-				log.Printf("[MCPWatch] failed to scan message row (key %s): %v", item.Key(), err)
+				slog.Error("failed to scan message row", "key", string(item.Key()), "error", err)
 				continue
 			}
 			if len(messages) >= limit {
@@ -218,6 +218,52 @@ func (s *Store) GetStats() (*Stats, error) {
 }
 
 
+func (s *Store) QueryAll() ([]*engine.Message, error) {
+	var messages []*engine.Message
+
+	err := s.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.Reverse = false
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		prefix := []byte("msg:")
+
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			item := it.Item()
+			err := item.Value(func(val []byte) error {
+				var msg engine.Message
+				if err := json.Unmarshal(val, &msg); err != nil {
+					return err
+				}
+				messages = append(messages, &msg)
+				return nil
+			})
+			if err != nil {
+				continue
+			}
+		}
+		return nil
+	})
+
+	return messages, err
+}
+
+
+func (s *Store) Clear() error {
+	s.idCounter.Store(0)
+	err := s.db.DropAll()
+	if err != nil {
+		return err
+	}
+	return s.db.Update(func(txn *badger.Txn) error {
+		statsBytes, _ := json.Marshal(Stats{})
+		return txn.Set([]byte("stats"), statsBytes)
+	})
+}
+
+
 func (s *Store) Close() error {
 	return s.db.Close()
 }
+

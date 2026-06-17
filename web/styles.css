@@ -121,6 +121,44 @@ body::before {
     gap: 16px;
 }
 
+.header-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.action-btn {
+    padding: 6px 12px;
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-family: var(--font-ui);
+    font-size: 0.78rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.action-btn:hover {
+    border-color: var(--cyan);
+    color: var(--cyan);
+    background: rgba(56, 189, 248, 0.08);
+    box-shadow: 0 0 8px rgba(56, 189, 248, 0.15);
+}
+
+.action-btn.delete-btn {
+    border-color: rgba(248, 113, 113, 0.2);
+    color: var(--red);
+}
+
+.action-btn.delete-btn:hover {
+    border-color: var(--red);
+    color: var(--red);
+    background: rgba(248, 113, 113, 0.08);
+    box-shadow: 0 0 8px rgba(248, 113, 113, 0.15);
+}
+
+
 .connection-status {
     display: flex;
     align-items: center;
@@ -466,6 +504,57 @@ body::before {
 .json-number { color: var(--amber); }
 .json-bool { color: var(--purple); }
 .json-null { color: var(--text-muted); }
+
+/* ── Analytics & Payload Inspection Styles ── */
+.msg-card.has-error {
+    border-color: rgba(248, 113, 113, 0.22);
+    background: rgba(248, 113, 113, 0.02);
+}
+.msg-card.has-error:hover {
+    border-color: rgba(248, 113, 113, 0.45);
+    background: rgba(248, 113, 113, 0.05);
+    transform: translateX(4px);
+}
+.msg-card.has-error.expanded {
+    border-color: var(--red);
+    box-shadow: 0 0 16px rgba(248, 113, 113, 0.15);
+}
+
+.json-label-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.copy-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-family: var(--font-ui);
+    font-size: 0.68rem;
+    font-weight: 500;
+    padding: 2px 8px;
+    cursor: pointer;
+    transition: all var(--transition);
+}
+.copy-btn:hover {
+    color: var(--cyan);
+    border-color: var(--cyan);
+    background: rgba(56, 189, 248, 0.08);
+}
+.copy-btn.copied {
+    color: var(--green);
+    border-color: var(--green);
+    background: rgba(74, 222, 128, 0.08);
+}
+
+.filter-btn.error-filter-btn:hover, .filter-btn.error-filter-btn.active {
+    border-color: var(--red);
+    color: var(--red);
+    background: rgba(248, 113, 113, 0.08);
+}
 
 /* ── Scrollbar ── */
 ::-webkit-scrollbar {

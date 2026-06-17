@@ -17,6 +17,11 @@
                 <span class="logo-sub">observation proxy</span>
             </div>
             <div class="header-right">
+                <div class="header-actions">
+                    <button class="action-btn" id="export-json-btn" title="Export logs as JSON">Export JSON</button>
+                    <button class="action-btn" id="export-csv-btn" title="Export logs as CSV">Export CSV</button>
+                    <button class="action-btn delete-btn" id="clear-btn" title="Clear all logs from database">Clear</button>
+                </div>
                 <div class="connection-status">
                     <span class="status-dot" id="status-dot"></span>
                     <span id="status-text">connecting...</span>
@@ -42,6 +47,7 @@
             <div class="stat-card">
                 <div class="stat-label">Errors</div>
                 <div class="stat-value red" id="stat-errors">0</div>
+                <div class="stat-subtext" id="stat-error-rate" style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">0% error rate</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">Total Volume</div>
@@ -62,6 +68,8 @@
             <button class="filter-btn" data-transport="sse">sse</button>
             <button class="filter-btn" data-transport="http">http</button>
             <button class="filter-btn" data-transport="ebpf">ebpf</button>
+            <button class="filter-btn error-filter-btn" id="error-filter-btn" title="Filter errors only">Errors Only</button>
+            <button class="filter-btn" id="expand-all-btn" title="Toggle expand all cards">Expand All</button>
         </div>
 
         <!-- Timeline -->

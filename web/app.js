@@ -8,7 +8,7 @@
         messages: [],
         connected: false,
         ws: null,
-        filter: { search: '', direction: '', transport: '' },
+        filter: { search: '', direction: '', transport: '', errorsOnly: false },
         expandedId: null,
     };
 
@@ -120,6 +120,7 @@
         const transport = (msg.transport || 'stdio').toLowerCase();
         const latency = msg.latency_ms;
         const expanded = state.expandedId === msg.id ? 'expanded' : '';
+        const hasErrorClass = (msg.error_code || (msg.error_data && msg.error_data !== 'null' && msg.error_data !== '')) ? 'has-error' : '';
 
         let latencyHTML = '';
         if (latency > 0) {
@@ -139,20 +140,48 @@
         // Build expandable body
         const bodyParts = [];
         if (msg.params && msg.params !== 'null') {
-            bodyParts.push(`<div class="json-section"><div class="json-label">params</div><div class="json-view">${syntaxHighlight(msg.params)}</div></div>`);
+            bodyParts.push(`
+                <div class="json-section">
+                    <div class="json-label-container">
+                        <span class="json-label">params</span>
+                        <button class="copy-btn" onclick="event.stopPropagation(); window.__copyText(this)">Copy</button>
+                    </div>
+                    <div class="json-view">${syntaxHighlight(msg.params)}</div>
+                </div>`);
         }
         if (msg.result && msg.result !== 'null') {
-            bodyParts.push(`<div class="json-section"><div class="json-label">result</div><div class="json-view">${syntaxHighlight(msg.result)}</div></div>`);
+            bodyParts.push(`
+                <div class="json-section">
+                    <div class="json-label-container">
+                        <span class="json-label">result</span>
+                        <button class="copy-btn" onclick="event.stopPropagation(); window.__copyText(this)">Copy</button>
+                    </div>
+                    <div class="json-view">${syntaxHighlight(msg.result)}</div>
+                </div>`);
         }
         if (msg.error_data && msg.error_data !== 'null' && msg.error_data !== '') {
-            bodyParts.push(`<div class="json-section"><div class="json-label">error</div><div class="json-view">${syntaxHighlight(msg.error_data)}</div></div>`);
+            bodyParts.push(`
+                <div class="json-section">
+                    <div class="json-label-container">
+                        <span class="json-label">error</span>
+                        <button class="copy-btn" onclick="event.stopPropagation(); window.__copyText(this)">Copy</button>
+                    </div>
+                    <div class="json-view">${syntaxHighlight(msg.error_data)}</div>
+                </div>`);
         }
         if (msg.raw) {
-            bodyParts.push(`<div class="json-section"><div class="json-label">raw</div><div class="json-view">${syntaxHighlight(msg.raw)}</div></div>`);
+            bodyParts.push(`
+                <div class="json-section">
+                    <div class="json-label-container">
+                        <span class="json-label">raw</span>
+                        <button class="copy-btn" onclick="event.stopPropagation(); window.__copyText(this)">Copy</button>
+                    </div>
+                    <div class="json-view">${syntaxHighlight(msg.raw)}</div>
+                </div>`);
         }
 
         return `
-            <div class="msg-card ${expanded}" data-id="${msg.id}" onclick="window.__toggleCard(${msg.id})">
+            <div class="msg-card ${expanded} ${hasErrorClass}" data-id="${msg.id}" onclick="window.__toggleCard(${msg.id})">
                 <div class="msg-header">
                     <span class="msg-direction ${dirClass}">${dirLabel}</span>
                     <span class="msg-method">${escapeHtml(method)}</span>
@@ -211,6 +240,7 @@
 
     function matchesFilter(msg) {
         const f = state.filter;
+        if (f.errorsOnly && !msg.error_code && (!msg.error_data || msg.error_data === 'null' || msg.error_data === '')) return false;
         if (f.direction && (msg.direction || '').toUpperCase() !== f.direction) return false;
         if (f.transport && (msg.transport || '') !== f.transport) return false;
         if (f.search) {
@@ -260,6 +290,14 @@
             statErrors.textContent = data.total_errors || 0;
             statVolume.textContent = formatBytes(data.total_bytes || 0);
             statTokens.textContent = formatNumber(data.total_tokens || 0);
+
+            const statErrorRate = $('#stat-error-rate');
+            if (statErrorRate) {
+                const total = data.total_messages || 0;
+                const errors = data.total_errors || 0;
+                const rate = total > 0 ? ((errors / total) * 100).toFixed(1) : 0;
+                statErrorRate.textContent = `${rate}% error rate`;
+            }
         } catch { /* ignore */ }
     }
 
@@ -302,6 +340,84 @@
         const div = document.createElement('div');
         div.textContent = str;
         return div.innerHTML;
+    }
+
+    // ── Export & Clear Actions ──
+    const exportJsonBtn = $('#export-json-btn');
+    const exportCsvBtn = $('#export-csv-btn');
+    const clearBtn = $('#clear-btn');
+
+    if (exportJsonBtn) {
+        exportJsonBtn.addEventListener('click', () => {
+            window.location.href = '/api/export/json';
+        });
+    }
+
+    if (exportCsvBtn) {
+        exportCsvBtn.addEventListener('click', () => {
+            window.location.href = '/api/export/csv';
+        });
+    }
+
+    if (clearBtn) {
+        clearBtn.addEventListener('click', async () => {
+            if (confirm('Are you sure you want to clear all log history? This cannot be undone.')) {
+                try {
+                    const res = await fetch('/api/clear', { method: 'POST' });
+                    if (res.ok) {
+                        state.messages = [];
+                        renderTimeline();
+                        updateStats();
+                    } else {
+                        alert('Failed to clear database');
+                    }
+                } catch (e) {
+                    console.error('[MCPWatch] Failed to clear database:', e);
+                }
+            }
+        });
+    }
+
+    // ── Clipboard Copy ──
+    window.__copyText = function (btn) {
+        const section = btn.closest('.json-section');
+        const view = section.querySelector('.json-view');
+        const text = view.innerText;
+        navigator.clipboard.writeText(text).then(() => {
+            const original = btn.textContent;
+            btn.textContent = 'Copied!';
+            btn.classList.add('copied');
+            setTimeout(() => {
+                btn.textContent = original;
+                btn.classList.remove('copied');
+            }, 1500);
+        }).catch(err => {
+            console.error('Failed to copy text: ', err);
+        });
+    };
+
+    // ── Errors Only & Expand All Filters ──
+    const errorFilterBtn = $('#error-filter-btn');
+    if (errorFilterBtn) {
+        errorFilterBtn.addEventListener('click', () => {
+            state.filter.errorsOnly = !state.filter.errorsOnly;
+            errorFilterBtn.classList.toggle('active', state.filter.errorsOnly);
+            renderTimeline();
+        });
+    }
+
+    const expandAllBtn = $('#expand-all-btn');
+    let allExpanded = false;
+    if (expandAllBtn) {
+        expandAllBtn.addEventListener('click', () => {
+            allExpanded = !allExpanded;
+            expandAllBtn.textContent = allExpanded ? 'Collapse All' : 'Expand All';
+            expandAllBtn.classList.toggle('active', allExpanded);
+            
+            document.querySelectorAll('.msg-card').forEach((card) => {
+                card.classList.toggle('expanded', allExpanded);
+            });
+        });
     }
 
     // ── Init ──
