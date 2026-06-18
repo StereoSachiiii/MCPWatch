@@ -62,7 +62,7 @@ int trace_write(struct sys_enter_write_args *ctx) {
     __u32 pid = id >> 32;
 
     if (pid != *target) return 0;
-    if (ctx->fd != 1) return 0; // stdout only
+    if (ctx->fd != 1 && ctx->fd != 2) return 0; // stdout and stderr only
 
     struct data_event *e = bpf_map_lookup_elem(&event_buf_map, &key);
     if (!e) return 0;

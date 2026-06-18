@@ -74,3 +74,29 @@ func (s *streamBuffer) extractJSON() []string {
 
 	return messages
 }
+
+func (s *streamBuffer) extractLines() []string {
+	var lines []string
+
+	for {
+		data := s.buf.Bytes()
+		if len(data) == 0 {
+			break
+		}
+
+		idx := bytes.IndexByte(data, '\n')
+		if idx == -1 {
+			break
+		}
+
+		line := string(data[:idx])
+		s.buf.Next(idx + 1)
+
+		if len(line) > 0 && line[len(line)-1] == '\r' {
+			line = line[:len(line)-1]
+		}
+		lines = append(lines, line)
+	}
+
+	return lines
+}

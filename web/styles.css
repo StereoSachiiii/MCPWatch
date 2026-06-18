@@ -556,6 +556,57 @@ body::before {
     background: rgba(248, 113, 113, 0.08);
 }
 
+.status-dot.disconnected {
+    background: var(--red);
+    box-shadow: 0 0 8px rgba(248, 113, 113, 0.5);
+    animation: pulse-red 2s ease-in-out infinite;
+}
+
+@keyframes pulse-red {
+    0%, 100% { box-shadow: 0 0 8px rgba(248, 113, 113, 0.5); }
+    50% { box-shadow: 0 0 16px rgba(248, 113, 113, 0.8); }
+}
+
+/* ── Stderr Logs Styling ── */
+.msg-card.stderr {
+    border-color: rgba(251, 191, 36, 0.15);
+    background: rgba(251, 191, 36, 0.01);
+}
+.msg-card.stderr:hover {
+    border-color: rgba(251, 191, 36, 0.30);
+    background: rgba(251, 191, 36, 0.03);
+}
+.msg-card.stderr.expanded {
+    border-color: var(--amber);
+    box-shadow: 0 0 16px rgba(251, 191, 36, 0.15);
+}
+
+.msg-direction.err {
+    color: var(--amber);
+    background: var(--amber-dim);
+}
+
+.msg-type-badge.stderr {
+    color: var(--amber);
+    background: var(--amber-dim);
+}
+
+.log-section {
+    margin-top: 4px;
+}
+
+.log-view {
+    background: rgba(6, 10, 19, 0.7);
+    border: 1px solid rgba(251, 191, 36, 0.15);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    color: #fca5a5;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar {
     width: 6px;

@@ -83,3 +83,54 @@ func TestExtractJSON(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractLines(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []string
+		expected []string
+	}{
+		{
+			name:     "Single line",
+			input:    []string{"hello\n"},
+			expected: []string{"hello"},
+		},
+		{
+			name:     "Multiple lines",
+			input:    []string{"line1\nline2\n"},
+			expected: []string{"line1", "line2"},
+		},
+		{
+			name:     "Fragmented line in two writes",
+			input:    []string{"first part ", "second part\n"},
+			expected: []string{"first part second part"},
+		},
+		{
+			name:     "Windows line endings",
+			input:    []string{"windows line\r\n"},
+			expected: []string{"windows line"},
+		},
+		{
+			name:     "No trailing newline is buffered",
+			input:    []string{"line1\nunterminated"},
+			expected: []string{"line1"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sb := &streamBuffer{}
+			var actual []string
+
+			for _, chunk := range tc.input {
+				sb.buf.WriteString(chunk)
+				lines := sb.extractLines()
+				actual = append(actual, lines...)
+			}
+
+			if !reflect.DeepEqual(actual, tc.expected) {
+				t.Errorf("expected: %v, got: %v", tc.expected, actual)
+			}
+		})
+	}
+}

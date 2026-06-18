@@ -36,6 +36,7 @@
             state.connected = true;
             state.ws = ws;
             updateConnectionStatus();
+            loadHistory();
         };
 
         ws.onmessage = (event) => {
@@ -58,6 +59,17 @@
         };
 
         ws.onerror = () => ws.close();
+    }
+
+    function updateConnectionStatus() {
+        if (!statusDot || !statusText) return;
+        if (state.connected) {
+            statusDot.className = 'status-dot connected';
+            statusText.textContent = 'connected';
+        } else {
+            statusDot.className = 'status-dot disconnected';
+            statusText.textContent = 'disconnected';
+        }
     }
 
     // ── Initial Data Load ──
@@ -113,13 +125,15 @@
     function buildCard(msg, index) {
         const time = formatTime(msg.timestamp);
         const dir = (msg.direction || '').toUpperCase();
-        const dirClass = dir === 'IN' ? 'in' : 'out';
-        const dirLabel = dir === 'IN' ? 'IN →' : '← OUT';
+        const dirClass = dir === 'IN' ? 'in' : (dir === 'ERR' ? 'err' : 'out');
+        const dirLabel = dir === 'IN' ? 'IN →' : (dir === 'ERR' ? 'STDERR' : '← OUT');
         const method = msg.method || '—';
         const msgType = msg.msg_type || 'unknown';
         const transport = (msg.transport || 'stdio').toLowerCase();
         const latency = msg.latency_ms;
         const expanded = state.expandedId === msg.id ? 'expanded' : '';
+        const isStderr = msgType === 'stderr';
+        const stderrClass = isStderr ? 'stderr' : '';
         const hasErrorClass = (msg.error_code || (msg.error_data && msg.error_data !== 'null' && msg.error_data !== '')) ? 'has-error' : '';
 
         let latencyHTML = '';
@@ -139,52 +153,59 @@
 
         // Build expandable body
         const bodyParts = [];
-        if (msg.params && msg.params !== 'null') {
+        if (isStderr) {
             bodyParts.push(`
-                <div class="json-section">
-                    <div class="json-label-container">
-                        <span class="json-label">params</span>
-                        <button class="copy-btn" onclick="event.stopPropagation(); window.__copyText(this)">Copy</button>
-                    </div>
-                    <div class="json-view">${syntaxHighlight(msg.params)}</div>
+                <div class="log-section">
+                    <div class="log-view">${escapeHtml(msg.raw)}</div>
                 </div>`);
-        }
-        if (msg.result && msg.result !== 'null') {
-            bodyParts.push(`
-                <div class="json-section">
-                    <div class="json-label-container">
-                        <span class="json-label">result</span>
-                        <button class="copy-btn" onclick="event.stopPropagation(); window.__copyText(this)">Copy</button>
-                    </div>
-                    <div class="json-view">${syntaxHighlight(msg.result)}</div>
-                </div>`);
-        }
-        if (msg.error_data && msg.error_data !== 'null' && msg.error_data !== '') {
-            bodyParts.push(`
-                <div class="json-section">
-                    <div class="json-label-container">
-                        <span class="json-label">error</span>
-                        <button class="copy-btn" onclick="event.stopPropagation(); window.__copyText(this)">Copy</button>
-                    </div>
-                    <div class="json-view">${syntaxHighlight(msg.error_data)}</div>
-                </div>`);
-        }
-        if (msg.raw) {
-            bodyParts.push(`
-                <div class="json-section">
-                    <div class="json-label-container">
-                        <span class="json-label">raw</span>
-                        <button class="copy-btn" onclick="event.stopPropagation(); window.__copyText(this)">Copy</button>
-                    </div>
-                    <div class="json-view">${syntaxHighlight(msg.raw)}</div>
-                </div>`);
+        } else {
+            if (msg.params && msg.params !== 'null') {
+                bodyParts.push(`
+                    <div class="json-section">
+                        <div class="json-label-container">
+                            <span class="json-label">params</span>
+                            <button class="copy-btn" onclick="event.stopPropagation(); window.__copyText(this)">Copy</button>
+                        </div>
+                        <div class="json-view">${syntaxHighlight(msg.params)}</div>
+                    </div>`);
+            }
+            if (msg.result && msg.result !== 'null') {
+                bodyParts.push(`
+                    <div class="json-section">
+                        <div class="json-label-container">
+                            <span class="json-label">result</span>
+                            <button class="copy-btn" onclick="event.stopPropagation(); window.__copyText(this)">Copy</button>
+                        </div>
+                        <div class="json-view">${syntaxHighlight(msg.result)}</div>
+                    </div>`);
+            }
+            if (msg.error_data && msg.error_data !== 'null' && msg.error_data !== '') {
+                bodyParts.push(`
+                    <div class="json-section">
+                        <div class="json-label-container">
+                            <span class="json-label">error</span>
+                            <button class="copy-btn" onclick="event.stopPropagation(); window.__copyText(this)">Copy</button>
+                        </div>
+                        <div class="json-view">${syntaxHighlight(msg.error_data)}</div>
+                    </div>`);
+            }
+            if (msg.raw) {
+                bodyParts.push(`
+                    <div class="json-section">
+                        <div class="json-label-container">
+                            <span class="json-label">raw</span>
+                            <button class="copy-btn" onclick="event.stopPropagation(); window.__copyText(this)">Copy</button>
+                        </div>
+                        <div class="json-view">${syntaxHighlight(msg.raw)}</div>
+                    </div>`);
+            }
         }
 
         return `
-            <div class="msg-card ${expanded} ${hasErrorClass}" data-id="${msg.id}" onclick="window.__toggleCard(${msg.id})">
+            <div class="msg-card ${expanded} ${hasErrorClass} ${stderrClass}" data-id="${msg.id}" onclick="window.__toggleCard(${msg.id})">
                 <div class="msg-header">
                     <span class="msg-direction ${dirClass}">${dirLabel}</span>
-                    <span class="msg-method">${escapeHtml(method)}</span>
+                    <span class="msg-method">${escapeHtml(isStderr ? 'stderr logs' : method)}</span>
                     <span class="msg-type-badge ${msgType}">${msgType}</span>
                     <span class="msg-transport ${transport}">${transport}</span>
                 </div>
@@ -421,7 +442,6 @@
     }
 
     // ── Init ──
-    loadHistory();
     connect();
     setInterval(updateStats, 5000);
 })();

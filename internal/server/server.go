@@ -78,7 +78,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) Start(port string) error {
+func (s *Server) setupMux() *http.ServeMux {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", s.handleHealth)
@@ -91,10 +91,21 @@ func (s *Server) Start(port string) error {
 	mux.HandleFunc("/api/clear", s.basicAuth(s.handleClear))
 
 	mux.Handle("/", s.basicAuthHandler(http.FileServer(http.FS(s.webFS))))
+	return mux
+}
 
+func (s *Server) Start(port string) error {
+	mux := s.setupMux()
 	addr := ":" + port
 	slog.Info("Dashboard running", "url", "http://localhost:"+port)
 	return http.ListenAndServe(addr, mux)
+}
+
+func (s *Server) StartTLS(port, certFile, keyFile string) error {
+	mux := s.setupMux()
+	addr := ":" + port
+	slog.Info("Dashboard running", "url", "https://localhost:"+port)
+	return http.ListenAndServeTLS(addr, certFile, keyFile, mux)
 }
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {

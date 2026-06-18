@@ -31,6 +31,8 @@ type Config struct {
 	LogJSON   bool   `json:"log_json"`
 	AuthUser  string `json:"auth_user"`
 	AuthPass  string `json:"auth_pass"`
+	TLSCert   string `json:"tls_cert"`
+	TLSKey    string `json:"tls_key"`
 }
 
 func main() {
@@ -44,6 +46,8 @@ func main() {
 	logJSON := flag.Bool("log-json", false, "Output log in JSON format instead of text")
 	authUser := flag.String("auth-user", "", "Username for dashboard basic auth")
 	authPass := flag.String("auth-pass", "", "Password for dashboard basic auth")
+	tlsCert := flag.String("tls-cert", "", "Path to TLS certificate file for HTTPS")
+	tlsKey := flag.String("tls-key", "", "Path to TLS key file for HTTPS")
 	configFile := flag.String("config", "", "Path to JSON configuration file")
 	versionFlag := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
@@ -64,6 +68,8 @@ func main() {
 		LogJSON:   *logJSON,
 		AuthUser:  *authUser,
 		AuthPass:  *authPass,
+		TLSCert:   *tlsCert,
+		TLSKey:    *tlsKey,
 	}
 
 	if *configFile != "" {
@@ -113,6 +119,12 @@ func main() {
 		if fileCfg.AuthPass != "" {
 			cfg.AuthPass = fileCfg.AuthPass
 		}
+		if fileCfg.TLSCert != "" {
+			cfg.TLSCert = fileCfg.TLSCert
+		}
+		if fileCfg.TLSKey != "" {
+			cfg.TLSKey = fileCfg.TLSKey
+		}
 
 		if explicitFlags["wrap"] {
 			cfg.WrapCmd = *wrapCmd
@@ -143,6 +155,12 @@ func main() {
 		}
 		if explicitFlags["auth-pass"] {
 			cfg.AuthPass = *authPass
+		}
+		if explicitFlags["tls-cert"] {
+			cfg.TLSCert = *tlsCert
+		}
+		if explicitFlags["tls-key"] {
+			cfg.TLSKey = *tlsKey
 		}
 	}
 
@@ -206,8 +224,14 @@ func main() {
 	}
 
 	go func() {
-		if err := srv.Start(cfg.UIPort); err != nil {
-			slog.Error("server stopped", "error", err)
+		if cfg.TLSCert != "" && cfg.TLSKey != "" {
+			if err := srv.StartTLS(cfg.UIPort, cfg.TLSCert, cfg.TLSKey); err != nil {
+				slog.Error("server stopped", "error", err)
+			}
+		} else {
+			if err := srv.Start(cfg.UIPort); err != nil {
+				slog.Error("server stopped", "error", err)
+			}
 		}
 	}()
 

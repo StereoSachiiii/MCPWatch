@@ -9,6 +9,7 @@ const (
 	MsgTypeRequest      MsgType = "request"
 	MsgTypeResponse     MsgType = "response"
 	MsgTypeNotification MsgType = "notification"
+	MsgTypeStderr       MsgType = "stderr"
 )
 
 

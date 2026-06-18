@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/perf"
@@ -83,9 +84,9 @@ func (h *EBPFHandler) Start(ctx context.Context, messages chan<- *engine.Message
 
 	var event dataEvent
 
-	
 	inStream := &streamBuffer{}
 	outStream := &streamBuffer{}
+	errStream := &streamBuffer{}
 
 	for {
 		record, err := rd.Read()
@@ -121,6 +122,22 @@ func (h *EBPFHandler) Start(ctx context.Context, messages chan<- *engine.Message
 			for _, jsonStr := range outStream.extractJSON() {
 				if msg := h.parser.Parse(jsonStr, "OUT", h.Type()); msg != nil {
 					messages <- msg
+				}
+			}
+		} else if event.Fd == 2 {
+			errStream.buf.Write(payloadChunk)
+			for _, line := range errStream.extractLines() {
+				select {
+				case messages <- &engine.Message{
+					Timestamp:     time.Now(),
+					Transport:     h.Type(),
+					Direction:     "ERR",
+					MsgType:       engine.MsgTypeStderr,
+					Raw:           line,
+					SizeBytes:     int64(len(line)),
+					TokenEstimate: int64(len(line)) / 4,
+				}:
+				default:
 				}
 			}
 		}

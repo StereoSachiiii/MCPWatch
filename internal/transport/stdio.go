@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"time"
 
 	"mcpwatch/internal/engine"
 )
@@ -53,11 +54,37 @@ func (h *StdioHandler) Start(ctx context.Context, messages chan<- *engine.Messag
 		return fmt.Errorf("stdout pipe: %w", err)
 	}
 
-	cmd.Stderr = os.Stderr
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("stderr pipe: %w", err)
+	}
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start command: %w", err)
 	}
+
+	// Read and capture stderr
+	go func() {
+		reader := io.TeeReader(stderrPipe, os.Stderr)
+		scanner := bufio.NewScanner(reader)
+		scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+		for scanner.Scan() {
+			line := scanner.Text()
+			msg := &engine.Message{
+				Timestamp:     time.Now(),
+				Transport:     h.Type(),
+				Direction:     "ERR",
+				MsgType:       engine.MsgTypeStderr,
+				Raw:           line,
+				SizeBytes:     int64(len(line)),
+				TokenEstimate: int64(len(line)) / 4,
+			}
+			select {
+			case messages <- msg:
+			default:
+			}
+		}
+	}()
 
 	
 	go func() {

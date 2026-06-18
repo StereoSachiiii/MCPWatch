@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  mcpwatch-proxy:
+    image: mcpwatch:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mcpwatch-proxy
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    # Command to run in HTTP/SSE Proxy intercept mode
+    command: ["--proxy", "http://mcp-server:3000", "--proxy-port", "8081", "--ui", "8080"]
+    restart: unless-stopped
+
+  # Alternate service definition for eBPF tracing (Uncomment to use)
+  # Note: eBPF tracing requires host namespaces, tracing volume mounts, and privileged mode.
+  #
+  # mcpwatch-ebpf:
+  #   image: mcpwatch:latest
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: mcpwatch-ebpf
+  #   network_mode: "host"
+  #   pid: "host"
+  #   privileged: true
+  #   volumes:
+  #     - /sys/kernel/debug:/sys/kernel/debug
+  #     - /sys/kernel/tracing:/sys/kernel/tracing
+  #   # Replace 1234 with the target process ID you wish to intercept
+  #   command: ["--pid", "1234", "--ui", "8080"]
+  #   restart: unless-stopped
