@@ -26,13 +26,33 @@ func main() {
 		var req Request
 		if err := json.Unmarshal([]byte(line), &req); err == nil {
 			switch req.Method {
+			case "initialize":
+				sendResponse(req.ID, map[string]interface{}{
+					"protocolVersion": "2024-11-05",
+					"capabilities": map[string]interface{}{
+						"tools": map[string]interface{}{},
+					},
+					"serverInfo": map[string]interface{}{
+						"name":    "calculator-server",
+						"version": "1.0.0",
+					},
+				})
 			case "tools/list":
 				sendResponse(req.ID, map[string]interface{}{
 					"tools": []map[string]interface{}{
 						{
 							"name":        "calculate",
 							"description": "Calculate an expression",
-							"inputSchema": map[string]interface{}{"type": "object"},
+							"inputSchema": map[string]interface{}{
+								"type": "object",
+								"properties": map[string]interface{}{
+									"expression": map[string]interface{}{
+										"type":        "string",
+										"description": "The math expression to evaluate (e.g. '15 + 27')",
+									},
+								},
+								"required": []string{"expression"},
+							},
 						},
 					},
 				})
@@ -40,14 +60,24 @@ func main() {
 				var p ToolCallParams
 				json.Unmarshal(req.Params, &p)
 				if p.Name == "calculate" {
+					var args struct {
+						Expression string `json:"expression"`
+					}
+					json.Unmarshal(p.Arguments, &args)
+					exprText := args.Expression
+					if exprText == "" {
+						exprText = "the expression"
+					}
 					sendResponse(req.ID, map[string]interface{}{
 						"content": []map[string]interface{}{
-							{"type": "text", "text": "The answer is 42"},
+							{"type": "text", "text": fmt.Sprintf("Calculated '%s'. The answer is 42.", exprText)},
 						},
 					})
 				}
 			default:
-				sendResponse(req.ID, map[string]interface{}{"status": "ok"})
+				if req.ID != nil {
+					sendResponse(req.ID, map[string]interface{}{"status": "ok"})
+				}
 			}
 		}
 	}

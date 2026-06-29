@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"mcpwatch/internal/storage"
+	"mcpwatch/internal/utils"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"nhooyr.io/websocket"
 )
 
@@ -73,8 +75,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":    "ok",
-		"timestamp": time.Now().Format(time.RFC3339),
+		"status":            "ok",
+		"timestamp":         time.Now().Format(time.RFC3339),
+		"active_goroutines": utils.GetActiveGoroutineCount(),
 	})
 }
 
@@ -89,6 +92,7 @@ func (s *Server) setupMux() *http.ServeMux {
 	mux.HandleFunc("/api/export/json", s.basicAuth(s.handleExportJSON))
 	mux.HandleFunc("/api/export/csv", s.basicAuth(s.handleExportCSV))
 	mux.HandleFunc("/api/clear", s.basicAuth(s.handleClear))
+	mux.Handle("/metrics", promhttp.Handler())
 
 	mux.Handle("/", s.basicAuthHandler(http.FileServer(http.FS(s.webFS))))
 	return mux

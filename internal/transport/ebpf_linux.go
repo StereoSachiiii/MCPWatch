@@ -114,14 +114,20 @@ func (h *EBPFHandler) Start(ctx context.Context, messages chan<- *engine.Message
 			inStream.buf.Write(payloadChunk)
 			for _, jsonStr := range inStream.extractJSON() {
 				if msg := h.parser.Parse(jsonStr, "IN", h.Type()); msg != nil {
-					messages <- msg
+					select {
+					case messages <- msg:
+					default:
+					}
 				}
 			}
 		} else if event.Fd == 1 { 
 			outStream.buf.Write(payloadChunk)
 			for _, jsonStr := range outStream.extractJSON() {
 				if msg := h.parser.Parse(jsonStr, "OUT", h.Type()); msg != nil {
-					messages <- msg
+					select {
+					case messages <- msg:
+					default:
+					}
 				}
 			}
 		} else if event.Fd == 2 {

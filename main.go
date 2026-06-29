@@ -8,12 +8,16 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"syscall"
 
+	"mcpwatch/internal/alert"
 	"mcpwatch/internal/engine"
+	"mcpwatch/internal/metrics"
 	"mcpwatch/internal/server"
 	"mcpwatch/internal/storage"
+	"mcpwatch/internal/tracing"
 	"mcpwatch/internal/transport"
 	"mcpwatch/web"
 )
@@ -21,18 +25,23 @@ import (
 var Version = "dev"
 
 type Config struct {
-	WrapCmd   string `json:"wrap"`
-	ProxyURL  string `json:"proxy"`
-	ProxyPort string `json:"proxy_port"`
-	PID       int    `json:"pid"`
-	DBPath    string `json:"db"`
-	UIPort    string `json:"ui"`
-	LogLevel  string `json:"log_level"`
-	LogJSON   bool   `json:"log_json"`
-	AuthUser  string `json:"auth_user"`
-	AuthPass  string `json:"auth_pass"`
-	TLSCert   string `json:"tls_cert"`
-	TLSKey    string `json:"tls_key"`
+	WrapCmd        string  `json:"wrap"`
+	ProxyURL       string  `json:"proxy"`
+	ProxyPort      string  `json:"proxy_port"`
+	PID            int     `json:"pid"`
+	DBPath         string  `json:"db"`
+	UIPort         string  `json:"ui"`
+	LogLevel       string  `json:"log_level"`
+	LogJSON        bool    `json:"log_json"`
+	AuthUser       string  `json:"auth_user"`
+	AuthPass       string  `json:"auth_pass"`
+	TLSCert        string  `json:"tls_cert"`
+	TLSKey         string  `json:"tls_key"`
+	AlertWebhook   string  `json:"alert_webhook"`
+	AlertErrorRate float64 `json:"alert_error_rate"`
+	AlertLatency   int64   `json:"alert_latency"`
+	AlertWindow    int     `json:"alert_window"`
+	GCPercent      int     `json:"gc_percent"`
 }
 
 func main() {
@@ -48,6 +57,11 @@ func main() {
 	authPass := flag.String("auth-pass", "", "Password for dashboard basic auth")
 	tlsCert := flag.String("tls-cert", "", "Path to TLS certificate file for HTTPS")
 	tlsKey := flag.String("tls-key", "", "Path to TLS key file for HTTPS")
+	alertWebhook := flag.String("alert-webhook", "", "Webhook URL for Slack or custom alerts")
+	alertErrorRate := flag.Float64("alert-error-rate", 0.0, "Error rate threshold percentage (e.g. 10.0 for 10%)")
+	alertLatency := flag.Int64("alert-latency", 0, "Latency threshold in milliseconds (e.g. 5000)")
+	alertWindow := flag.Int("alert-window", 60, "Check window size in seconds")
+	gcPercent := flag.Int("gc-percent", 35, "Target GC garbage collection heap growth percentage (30-40 recommended)")
 	configFile := flag.String("config", "", "Path to JSON configuration file")
 	versionFlag := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
@@ -70,6 +84,11 @@ func main() {
 		AuthPass:  *authPass,
 		TLSCert:   *tlsCert,
 		TLSKey:    *tlsKey,
+		AlertWebhook:   *alertWebhook,
+		AlertErrorRate: *alertErrorRate,
+		AlertLatency:   *alertLatency,
+		AlertWindow:    *alertWindow,
+		GCPercent:      *gcPercent,
 	}
 
 	if *configFile != "" {
@@ -125,6 +144,21 @@ func main() {
 		if fileCfg.TLSKey != "" {
 			cfg.TLSKey = fileCfg.TLSKey
 		}
+		if fileCfg.AlertWebhook != "" {
+			cfg.AlertWebhook = fileCfg.AlertWebhook
+		}
+		if fileCfg.AlertErrorRate > 0 {
+			cfg.AlertErrorRate = fileCfg.AlertErrorRate
+		}
+		if fileCfg.AlertLatency > 0 {
+			cfg.AlertLatency = fileCfg.AlertLatency
+		}
+		if fileCfg.AlertWindow > 0 {
+			cfg.AlertWindow = fileCfg.AlertWindow
+		}
+		if fileCfg.GCPercent > 0 {
+			cfg.GCPercent = fileCfg.GCPercent
+		}
 
 		if explicitFlags["wrap"] {
 			cfg.WrapCmd = *wrapCmd
@@ -162,6 +196,21 @@ func main() {
 		if explicitFlags["tls-key"] {
 			cfg.TLSKey = *tlsKey
 		}
+		if explicitFlags["alert-webhook"] {
+			cfg.AlertWebhook = *alertWebhook
+		}
+		if explicitFlags["alert-error-rate"] {
+			cfg.AlertErrorRate = *alertErrorRate
+		}
+		if explicitFlags["alert-latency"] {
+			cfg.AlertLatency = *alertLatency
+		}
+		if explicitFlags["alert-window"] {
+			cfg.AlertWindow = *alertWindow
+		}
+		if explicitFlags["gc-percent"] {
+			cfg.GCPercent = *gcPercent
+		}
 	}
 
 	// Configure structured logger
@@ -184,6 +233,10 @@ func main() {
 		handler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})
 	}
 	slog.SetDefault(slog.New(handler))
+
+	// Set garbage collection aggressiveness target
+	oldGC := debug.SetGCPercent(cfg.GCPercent)
+	slog.Info("Garbage collector tuned", "gc_percent", cfg.GCPercent, "previous_gc_percent", oldGC)
 
 	modes := 0
 	if cfg.WrapCmd != "" {
@@ -208,6 +261,11 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
+	tp := tracing.InitTracer(ctx)
+	if tp != nil {
+		defer tp.Shutdown(context.Background())
+	}
+
 	store, err := storage.New(cfg.DBPath)
 	if err != nil {
 		slog.Error("failed to init database", "error", err)
@@ -216,6 +274,12 @@ func main() {
 	defer store.Close()
 
 	correlator := engine.NewCorrelator()
+
+	// Start Alerting Engine
+	if cfg.AlertWebhook != "" {
+		alerter := alert.New(store, cfg.AlertWebhook, cfg.AlertErrorRate, cfg.AlertLatency, cfg.AlertWindow)
+		go alerter.Start(ctx)
+	}
 
 	hub := server.NewHub()
 	srv := server.New(store, hub, web.Assets)
@@ -263,6 +327,7 @@ func main() {
 			}
 
 			correlator.Process(msg)
+			metrics.RecordMetrics(msg)
 
 			if err := store.Insert(msg); err != nil {
 				slog.Error("failed to insert message", "error", err)

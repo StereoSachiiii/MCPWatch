@@ -77,11 +77,19 @@ func (t *interceptingTransport) RoundTrip(req *http.Request) (*http.Response, er
 		bodyBytes, _ := io.ReadAll(req.Body)
 		req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
-		line := string(bodyBytes)
-		if msg := t.parser.Parse(line, "IN", t.transportType); msg != nil {
-			select {
-			case t.messages <- msg:
-			default:
+		lines := bytes.Split(bodyBytes, []byte("\n"))
+		for _, lineBytes := range lines {
+			lineBytes = bytes.TrimSpace(lineBytes)
+			lineBytes = bytes.TrimPrefix(lineBytes, []byte("\x1e"))
+			line := string(lineBytes)
+			if line == "" {
+				continue
+			}
+			if msg := t.parser.Parse(line, "IN", t.transportType); msg != nil {
+				select {
+				case t.messages <- msg:
+				default:
+				}
 			}
 		}
 	}
@@ -91,12 +99,14 @@ func (t *interceptingTransport) RoundTrip(req *http.Request) (*http.Response, er
 		return res, err
 	}
 
-	
 	if res.Body != nil {
 		contentType := res.Header.Get("Content-Type")
-		if strings.HasPrefix(contentType, "text/event-stream") {
+		if strings.HasPrefix(contentType, "text/event-stream") ||
+			strings.HasPrefix(contentType, "application/x-ndjson") ||
+			strings.HasPrefix(contentType, "application/json-seq") ||
+			strings.Contains(contentType, "ndjson") {
 
-			res.Body = &sseInterceptor{
+			res.Body = &streamInterceptor{
 				ReadCloser: res.Body,
 				messages:   t.messages,
 				transType:  t.transportType,
@@ -119,7 +129,7 @@ func (t *interceptingTransport) RoundTrip(req *http.Request) (*http.Response, er
 	return res, err
 }
 
-type sseInterceptor struct {
+type streamInterceptor struct {
 	io.ReadCloser
 	messages  chan<- *engine.Message
 	transType string
@@ -127,11 +137,11 @@ type sseInterceptor struct {
 	parser    engine.Parser
 }
 
-func (s *sseInterceptor) Read(p []byte) (n int, err error) {
+func (s *streamInterceptor) Read(p []byte) (n int, err error) {
 	n, err = s.ReadCloser.Read(p)
 	if n > 0 {
 		if len(s.buf)+n > 10*1024*1024 {
-			return 0, fmt.Errorf("sse stream buffer limit exceeded (10MB)")
+			return 0, fmt.Errorf("stream buffer limit exceeded (10MB)")
 		}
 		s.buf = append(s.buf, p[:n]...)
 		for {
@@ -139,18 +149,30 @@ func (s *sseInterceptor) Read(p []byte) (n int, err error) {
 			if idx == -1 {
 				break
 			}
-			line := string(s.buf[:idx])
+			lineBytes := s.buf[:idx]
 			s.buf = s.buf[idx+1:]
 
-			line = strings.TrimSpace(line)
+			// Strip \r, leading whitespace, and JSON-seq \x1e character
+			lineBytes = bytes.TrimSpace(lineBytes)
+			lineBytes = bytes.TrimPrefix(lineBytes, []byte("\x1e"))
+			line := string(lineBytes)
+
+			if line == "" {
+				continue
+			}
+
+			var payload string
 			if strings.HasPrefix(line, "data:") {
-				payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-				if payload != "" && (strings.HasPrefix(payload, "{") || strings.HasPrefix(payload, "[")) {
-					if msg := s.parser.Parse(payload, "OUT", s.transType); msg != nil {
-						select {
-						case s.messages <- msg:
-						default:
-						}
+				payload = strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			} else {
+				payload = line
+			}
+
+			if payload != "" && (strings.HasPrefix(payload, "{") || strings.HasPrefix(payload, "[")) {
+				if msg := s.parser.Parse(payload, "OUT", s.transType); msg != nil {
+					select {
+					case s.messages <- msg:
+					default:
 					}
 				}
 			}

@@ -23,3 +23,7 @@ vendor/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Local testing data
+mcpwatch_data/
+test_env/
