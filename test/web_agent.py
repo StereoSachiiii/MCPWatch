@@ -32,11 +32,17 @@ async def run_web_agent():
                 tools = tools_response.tools
                 print(f"✓ Discovered tools: {[t.name for t in tools]}")
 
-                # 3. Ask Gemini to summarize a web page
-                user_prompt = "Fetch the webpage http://example.com and summarize what the domain is reserved for in 2 sentences."
+                # 3. Dynamic Agent Loop
+                user_prompt = (
+                    "Find the name of the original designers of the Go programming language from "
+                    "http://localhost:8081/mock/go using your tool. "
+                    "Then, select one of the designers (Rob Pike or Ken Thompson), fetch their individual "
+                    "mock webpage (use the URL provided in the page), and determine their date of birth. "
+                    "Provide a final summary identifying the designers and the birth date of the selected designer."
+                )
                 print(f'\n💬 User Agent Goal: "{user_prompt}"')
 
-                # Map to Gemini definitions
+                # Map MCP tools to Gemini declarations
                 gemini_tools = []
                 for t in tools:
                     gemini_tools.append(
@@ -51,50 +57,71 @@ async def run_web_agent():
                         )
                     )
 
-                print("🧠 Asking LLM model...")
-                response = ai.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=user_prompt,
-                    config=types.GenerateContentConfig(
-                        tools=gemini_tools,
-                    ),
-                )
+                # Initialize chat history with the user prompt
+                messages = [
+                    types.Content(role="user", parts=[types.Part.from_text(text=user_prompt)])
+                ]
 
-                # Check if Gemini wants to call a tool
-                if response.function_calls:
-                    call = response.function_calls[0]
-                    print(f"🤖 Agent decided to execute tool '{call.name}' with arguments: {call.args}")
+                max_turns = 5
+                turn = 0
+                while turn < max_turns:
+                    turn += 1
+                    print(f"\n🧠 [Turn {turn}] Asking LLM model...")
 
-                    args_dict = dict(call.args) if call.args else {}
-
-                    # 4. Invoke tool call via proxy
-                    print("📤 Dispatching tool call through proxy...")
-                    tool_result = await session.call_tool(call.name, arguments=args_dict)
-                    print(f"📥 Received tool response.")
-
-                    # 5. Send result back to Gemini
-                    history = [
-                        types.Content(role="user", parts=[types.Part.from_text(text=user_prompt)]),
-                        response.candidates[0].content,
-                        types.Content(
-                            role="user",
-                            parts=[
-                                types.Part.from_function_response(
-                                    name=call.name,
-                                    response={"result": tool_result.content}
-                                )
-                            ]
+                    # Run blocking model generate in executor to keep event loop responsive
+                    loop = asyncio.get_running_loop()
+                    response = await loop.run_in_executor(
+                        None,
+                        lambda: ai.models.generate_content(
+                            model='gemini-2.5-flash',
+                            contents=messages,
+                            config=types.GenerateContentConfig(
+                                tools=gemini_tools,
+                            ),
                         )
-                    ]
-
-                    print("🧠 Generating final response text...")
-                    final_response = ai.models.generate_content(
-                        model='gemini-2.5-flash',
-                        contents=history
                     )
-                    print(f"\n🤖 Final Agent Response: \"{final_response.text.strip()}\"")
+
+                    # Append model response to message history
+                    messages.append(response.candidates[0].content)
+
+                    if response.function_calls:
+                        # Iterate through each function call requested by the model in this turn
+                        for call in response.function_calls:
+                            print(f"🤖 Agent decided to execute tool '{call.name}' with arguments: {call.args}")
+                            args_dict = dict(call.args) if call.args else {}
+
+                            # Dispatch tool call through mcpwatch proxy
+                            print(f"📤 Dispatching tool call '{call.name}' through proxy...")
+                            tool_result = await session.call_tool(call.name, arguments=args_dict)
+                            
+                            # Parse out text responses
+                            results_list = []
+                            for block in tool_result.content:
+                                if hasattr(block, "text"):
+                                    results_list.append(block.text)
+                                else:
+                                    results_list.append(str(block))
+                            raw_text = "\n".join(results_list)
+                            print(f"📥 Received tool response of size: {len(raw_text)} characters.")
+
+                            # Append function response to the chat history
+                            messages.append(
+                                types.Content(
+                                    role="user",
+                                    parts=[
+                                        types.Part.from_function_response(
+                                            name=call.name,
+                                            response={"result": raw_text}
+                                        )
+                                    ]
+                                )
+                            )
+                    else:
+                        # No function calls means the agent is done and has synthesized the final answer
+                        print(f"\n🤖 Final Agent Response:\n{response.text.strip()}\n")
+                        break
                 else:
-                    print(f"\n🤖 Final Agent Response (No tool calls): \"{response.text.strip()}\"")
+                    print("⚠️ Reached maximum number of turns without completing goal.")
                     
     except Exception as e:
         import traceback

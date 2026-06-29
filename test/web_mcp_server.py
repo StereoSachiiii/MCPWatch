@@ -13,6 +13,45 @@ import mcp.types as types
 app = FastAPI(title="FastAPI Web Access MCP Server")
 mcp_server = Server("web-access-server")
 
+# Local Mock Webpages for robust agent testing
+@app.get("/mock/go")
+def get_mock_go():
+    return """
+    <html>
+        <body>
+            <h1>Go Programming Language Designers</h1>
+            <p>The Go language was originally designed by the following core members:</p>
+            <ul>
+                <li><a href="http://localhost:8081/mock/rob-pike">Rob Pike</a></li>
+                <li><a href="http://localhost:8081/mock/ken-thompson">Ken Thompson</a></li>
+                <li>Robert Griesemer</li>
+            </ul>
+        </body>
+    </html>
+    """
+
+@app.get("/mock/rob-pike")
+def get_mock_rob_pike():
+    return """
+    <html>
+        <body>
+            <h1>Rob Pike</h1>
+            <p>Rob Pike (born 5 January 1956) is a Canadian software engineer and author.</p>
+        </body>
+    </html>
+    """
+
+@app.get("/mock/ken-thompson")
+def get_mock_ken_thompson():
+    return """
+    <html>
+        <body>
+            <h1>Ken Thompson</h1>
+            <p>Ken Thompson (born February 4, 1943) is an American pioneer of computer science.</p>
+        </body>
+    </html>
+    """
+
 # 2. Define the Web Page Scraper Tool
 @mcp_server.list_tools()
 async def handle_list_tools() -> list[types.Tool]:
