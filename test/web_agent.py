@@ -33,13 +33,17 @@ async def run_web_agent():
                 print(f"✓ Discovered tools: {[t.name for t in tools]}")
 
                 # 3. Dynamic Agent Loop
-                user_prompt = (
-                    "Find the name of the original designers of the Go programming language from "
-                    "http://localhost:8081/mock/go using your tool. "
-                    "Then, select one of the designers (Rob Pike or Ken Thompson), fetch their individual "
-                    "mock webpage (use the URL provided in the page), and determine their date of birth. "
-                    "Provide a final summary identifying the designers and the birth date of the selected designer."
-                )
+                # Read user prompt dynamically from stdin
+                print("\nEnter your agent goal/instruction (e.g. 'Fetch http://localhost:8081/mock/go and summarize'):")
+                try:
+                    user_prompt = input("💬 Goal: ").strip()
+                except (IOError, EOFError):
+                    print("Could not read prompt from stdin. Exiting.")
+                    return
+                
+                if not user_prompt:
+                    print("Empty prompt. Exiting.")
+                    return
                 print(f'\n💬 User Agent Goal: "{user_prompt}"')
 
                 # Map MCP tools to Gemini declarations
