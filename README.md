@@ -8,7 +8,7 @@ A high-performance observability proxy for inspecting Model Context Protocol (MC
 
 ## Features
 
-*   **Three Capture Modes:** Stdio wrapper, HTTP/SSE reverse proxy, and Linux eBPF process tracer.
+*   **Four Capture Modes:** Stdio wrapper, HTTP/SSE reverse proxy, Linux eBPF process tracer, and Unix Domain Socket (UDS) proxy.
 *   **Embedded Web Dashboard:** Single-binary deployment with flat-DOM HTML/CSS/JS embedded using `go embed` (no npm or Node.js required).
 *   **BadgerDB Storage:** High-performance LSM-tree storage for message log auditing.
 *   **Prometheus Metrics:** Native instrumentation for message counts, payload sizes, token estimates, and request latencies.
@@ -83,7 +83,7 @@ docker-compose up --build
 
 ## Usage Guide & Command-Line Flags
 
-Run `mcpwatch` specifying exactly **one** of the transport modes (`--wrap`, `--proxy`, or `--pid`):
+Run `mcpwatch` specifying exactly **one** of the transport modes (`--wrap`, `--proxy`, `--pid`, or `--socket-local`/`--socket-target`):
 
 ```bash
 Usage: mcpwatch [mode] [--db path] [--ui port] [other-flags]
@@ -110,6 +110,13 @@ Attaches to an already-running process by its PID without restarting or changing
 sudo ./mcpwatch --pid 28415 --ui 8080
 ```
 
+### 4. Unix Domain Socket (UDS) Mode
+Acts as a local Unix domain socket proxy, forwarding requests to the target socket:
+
+```bash
+mcpwatch.exe --socket-local "/tmp/mcp.sock" --socket-target "/tmp/real_mcp.sock" --ui 8080
+```
+
 ---
 
 ## Configuration
@@ -123,6 +130,8 @@ sudo ./mcpwatch --pid 28415 --ui 8080
 | `--proxy` | `""` | Remote MCP URL target (Proxy mode) |
 | `--proxy-port`| `"8081"` | Local port to bind the proxy server |
 | `--pid` | `0` | PID of the running process to trace via eBPF |
+| `--socket-local`| `""` | Local Unix socket path to listen on (Socket mode) |
+| `--socket-target`| `""` | Target Unix socket path to forward to (Socket mode) |
 | `--db` | `"mcpwatch_data"` | Folder path to host the BadgerDB KV store |
 | `--ui` | `"8080"` | Port to serve the dashboard interface |
 | `--gc-percent` | `35` | Garbage collection heap target percentage (aggressive: `30` to `40`) |
@@ -211,32 +220,27 @@ $env:OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
 
 ---
 
-## Checked & Remaining TODOs
+## Technical & Conceptual Deep-Dive
 
-- [x] Integrate the internal packages with main.go. right now main.go is a separate monolith ignoring the internal folder.
-- [x] Add the missing cli flags for proxy and ebpf modes.
-- [x] Hook up the correlator to calculate request latency.
-- [x] No graceful shutdown. if you ctrl-c the process, the sqlite database, child process, and websocket connections are not cleaned up properly.
-- [x] Update remote proxy logic to use the current Streamable HTTP (ND-JSON) standard.
-- [x] Fix the correlator memory leak. go maps don't shrink so bursty traffic will bloat the heap permanently.
-- [x] Implement websocket streaming for live web ui updates.
-- [x] Finish advanced analytics like error tracking and deep payload inspection.
-- [x] Write and compile the actual eBPF C code for the kernel. the Go side is wired up but there is no tracer.c yet.
-- [x] Abstract the parser behind a proper interface.
-- [x] Zero test coverage. there are no unit tests for the correlator, parser, storage, or hub. need table-driven tests at minimum.
-- [x] The messages channel in the transport handlers is unbuffered or has a fixed size. if the consumer is slow the sender goroutines will block silently and freeze the proxy.
-- [x] No structured logging. everything uses raw fmt.Fprintf or log.Printf with no log levels. need at least debug/info/error levels.
-- [x] No configuration file support. everything is hardcoded or passed as cli flags. should support a config file for complex setups.
-- [x] No way to export or clear the database. users can't dump the audit log to json or csv, and can't reset it without deleting the file.
-- [x] No authentication on the dashboard. anyone on the network can open port 8080 and see all intercepted traffic.
-- [x] The web ui is served from the filesystem with http.ServeFile. it should be embedded into the binary using go embed so it ships as a single file.
-- [x] No CI pipeline. no github actions for build, test, or release.
-- [x] No versioning. the binary has no --version flag and no build-time version injection.
-- [x] No health check endpoint. there is no way for monitoring systems to verify mcpwatch is alive.
-- [x] The storage layer silently ignores scan errors in QueryRecent (line 98 just does continue). bad rows are dropped with no logging.
-- [x] Sqlite writes are synchronous one-at-a-time inserts. should use a buffer + async drain pattern to batch inserts in a single transaction on a timer or size threshold. way faster, keeps the proxy path non-blocking.
-- [x] Replace gorilla/websocket with nhooyr.io/websocket since gorilla is archived and nhooyr is smaller and natively supports context.
-- [x] Make gc very aggressive, crank up to 30-40% heap target , check if this doesnt actualy because a bottleneck, learn how go GC tracks ownership and what makes something eligible for a gc run, make sure it doesnt negatively impact performance.
-- [x] Find if coroutine explosion is actually a real thing, or if its just a myth made by people who are bad at writing go code, test it thoroughly. find if the coroutine can use mutexes and how does that userspace scheduler  cooperate with linux kernel scheduler to prevent coroutine starvation. also find if there is a way to get the number of coroutines in the system. if there isnt, make one. create a utility or something to get the number of coroutines. does # of coroutines reflect the current workload? how does that work> solidify it.
-- [x] Why is go using SIGURG??? how does that map into my code.
-- [ ] Dont have to know everything, just what happens to my data , how it gets bounced/ moved/copied around the userspace and who owns the resources, how its scheduled , why is  badger  beyond just memory buffer and kv architecture
+### 1. Data Lifecycles: Copies, Heap Escape, and Memory Ownership
+When an MCP message is processed by `mcpwatch`, data moves through distinct user-space memory states:
+*   **Kernel to User Space:** Operating system sockets or pipe handles buffer incoming TCP/stdio streams. When `mcpwatch` reads from these descriptors (`Reader.Read`), the kernel copies network buffers into Go-allocated byte slices.
+*   **Buffer Allocation & Copies:** In `streamInterceptor` or the stdio scanner, bytes are read into stack-allocated slices. When we split inputs by newline delimiters (`\n`), new slices referencing the underlying array are formed. If these slices are passed to goroutines, written to channels (`messages`), or converted to strings (e.g. `string(lineBytes)`), Go copies the slice contents into newly allocated heap objects, since the string lifecycle extends beyond the scanner's stack frame.
+*   **Heap Escape Analysis:** The Go compiler runs escape analysis to determine if variables can remain on the stack or must be moved to the heap. If a byte slice escapes (e.g. parsed into a JSON-RPC struct pointer returned by a function, or sent across a channel to another goroutine), it triggers a heap allocation. Heap allocations require garbage collection. The aggressive GC tuning (`--gc-percent 35`) tells the Go runtime to trigger a GC sweep once the live heap grows by 35% over the base heap size, limiting memory growth under high, bursty JSON parsing workloads.
+
+### 2. The Go Runtime Scheduler & Synchronization
+Go schedules concurrency using the GMP model:
+*   **G (Goroutine):** Represents the goroutine structure, containing stack pointers, PC, and execution state.
+*   **M (Machine/OS Thread):** An actual OS thread managed by the kernel scheduler.
+*   **P (Processor):** A logical processor representing resource execution contexts. The number of Ps defaults to GOMAXPROCS.
+*   **Preemption and `SIGURG`:** Prior to Go 1.14, scheduling was purely cooperative (goroutines only yielded at function calls or allocation boundaries). A tight, non-allocating loop could lock a thread indefinitely. To solve this, Go introduced asynchronous preemption. The runtime periodically checks goroutine runtimes. If a goroutine runs for too long (>10ms), the system thread sends a **`SIGURG` (Urgent Out-of-Band Data)** signal to the thread executing it. The thread's signal handler intercepts `SIGURG`, saves the register state, and calls `goschedimpl` to park the goroutine and run another G, preventing CPU starvation.
+*   **Mutex Starvation & Futexes:** When Go goroutines synchronize using `sync.Mutex`, they attempt to acquire a lock via fast-path atomic updates. If the lock is held, the goroutine parks on a semaphore queue using kernel `futex` (fast userspace mutex) calls. Go mutexes feature a **starvation mode** to prevent lock acquisition starvation by active CPU goroutines. If a waiting goroutine fails to acquire the lock for more than 1 millisecond, it flags the mutex as starved. In starvation mode, the lock is handed directly to the first goroutine in the wait queue, bypassing the fast-path acquisition of newly spawned running goroutines.
+
+### 3. BadgerDB Architecture: WiscKey and the LSM-Tree
+Traditional Key-Value stores (like RocksDB or LevelDB) use a Log-Structured Merge-tree (LSM-tree) where keys and values are stored together. During compaction (merging and sorting SSTables across disk tiers), both keys and values are rewritten repeatedly. This causes high **Write Amplification**, wearing out SSDs and saturating I/O.
+
+BadgerDB resolves this using the **WiscKey** architecture:
+*   **Key-Value Separation:** Keys are kept in a standard memory-buffered LSM-tree (using SSTables) for fast binary search, indexing, and range queries. Values, which are typically much larger, are appended sequentially to a separate **Value Log (Vlog)**.
+*   **Compaction Efficiency:** During compaction runs, BadgerDB only sorts and rewrites SSTables containing the keys. It does not rewrite the values in the Vlog, slashing write amplification factors from ~10-30x down to nearly 1.1-2x.
+*   **Garbage Collection:** As keys are deleted or updated, their values in the Vlog become stale. BadgerDB runs background Vlog garbage collection by reading blocks sequentially, checking if the corresponding key still exists in the LSM-tree, and rewriting valid keys to the tail of the log while discarding stale space.
+*   **Memory-Mapped Files (mmap):** BadgerDB utilizes standard kernel memory mapping (`mmap`) to map database SSTables directly into user space. This allows the OS virtual memory manager to handle file caching natively, eliminating user-space copying and context-switching overhead during reads.
