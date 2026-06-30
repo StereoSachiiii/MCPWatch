@@ -47,7 +47,8 @@ struct {
 struct sys_enter_write_args {
     unsigned long long unused;
     int syscall_nr;
-    unsigned int fd;
+    int pad;
+    unsigned long fd;
     const char *buf;
     unsigned long count;
 };
@@ -61,8 +62,13 @@ int trace_write(struct sys_enter_write_args *ctx) {
     __u64 id = bpf_get_current_pid_tgid();
     __u32 pid = id >> 32;
 
+    bpf_printk("DEBUG: pid=%d target_val=%d fd=%d count=%d", pid, *target, ctx->fd, ctx->count);
+
     if (pid != *target) return 0;
     if (ctx->fd != 1 && ctx->fd != 2) return 0; // stdout and stderr only
+
+    // Log only target writes to trace_pipe
+    bpf_printk("trace_write: target matches pid=%d fd=%d count=%d", pid, ctx->fd, ctx->count);
 
     struct data_event *e = bpf_map_lookup_elem(&event_buf_map, &key);
     if (!e) return 0;
@@ -82,7 +88,8 @@ int trace_write(struct sys_enter_write_args *ctx) {
 struct sys_enter_read_args {
     unsigned long long unused;
     int syscall_nr;
-    unsigned int fd;
+    int pad;
+    unsigned long fd;
     const char *buf;
     unsigned long count;
 };
@@ -96,8 +103,13 @@ int trace_read_enter(struct sys_enter_read_args *ctx) {
     __u64 id = bpf_get_current_pid_tgid();
     __u32 pid = id >> 32;
 
+    bpf_printk("DEBUG: read_enter pid=%d target_val=%d fd=%d", pid, *target, ctx->fd);
+
     if (pid != *target) return 0;
     if (ctx->fd != 0) return 0; // stdin only
+
+    // Log only target reads to trace_pipe
+    bpf_printk("trace_read_enter: target matches pid=%d fd=%d", pid, ctx->fd);
 
     const char *buf = ctx->buf;
     bpf_map_update_elem(&read_args, &id, &buf, BPF_ANY);
@@ -113,9 +125,12 @@ struct sys_exit_read_args {
 SEC("tracepoint/syscalls/sys_exit_read")
 int trace_read_exit(struct sys_exit_read_args *ctx) {
     __u64 id = bpf_get_current_pid_tgid();
+    __u32 pid = id >> 32;
     const char **buf_ptr = bpf_map_lookup_elem(&read_args, &id);
     if (!buf_ptr) return 0;
     
+    bpf_printk("trace_read_exit: pid=%d ret=%d", pid, ctx->ret);
+
     const char *buf = *buf_ptr;
     bpf_map_delete_elem(&read_args, &id);
 

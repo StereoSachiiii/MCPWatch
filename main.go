@@ -42,6 +42,8 @@ type Config struct {
 	AlertLatency   int64   `json:"alert_latency"`
 	AlertWindow    int     `json:"alert_window"`
 	GCPercent      int     `json:"gc_percent"`
+	SocketLocal    string  `json:"socket_local"`
+	SocketTarget   string  `json:"socket_target"`
 }
 
 func main() {
@@ -62,6 +64,8 @@ func main() {
 	alertLatency := flag.Int64("alert-latency", 0, "Latency threshold in milliseconds (e.g. 5000)")
 	alertWindow := flag.Int("alert-window", 60, "Check window size in seconds")
 	gcPercent := flag.Int("gc-percent", 35, "Target GC garbage collection heap growth percentage (30-40 recommended)")
+	socketLocal := flag.String("socket-local", "", "Local Unix socket path to listen on")
+	socketTarget := flag.String("socket-target", "", "Target Unix socket path to forward to")
 	configFile := flag.String("config", "", "Path to JSON configuration file")
 	versionFlag := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
@@ -89,6 +93,8 @@ func main() {
 		AlertLatency:   *alertLatency,
 		AlertWindow:    *alertWindow,
 		GCPercent:      *gcPercent,
+		SocketLocal:    *socketLocal,
+		SocketTarget:   *socketTarget,
 	}
 
 	if *configFile != "" {
@@ -248,6 +254,9 @@ func main() {
 	if cfg.PID != 0 {
 		modes++
 	}
+	if cfg.SocketLocal != "" && cfg.SocketTarget != "" {
+		modes++
+	}
 
 	if modes != 1 {
 		fmt.Println("Usage: mcpwatch [mode] [--db path] [--ui port]")
@@ -255,6 +264,8 @@ func main() {
 		fmt.Println("  --wrap \"command args\"   Run and intercept stdio of a local command")
 		fmt.Println("  --proxy \"url\"           Proxy and intercept HTTP/SSE to a remote server")
 		fmt.Println("  --pid 1234              Attach and intercept via eBPF to an existing process (Linux only)")
+		fmt.Println("  --socket-local \"path\"   Local Unix socket path to listen on (socket mode)")
+		fmt.Println("  --socket-target \"path\"  Target Unix socket path to forward to (socket mode)")
 		os.Exit(1)
 	}
 
@@ -308,6 +319,8 @@ func main() {
 		handlerTrans = transport.NewProxy(cfg.ProxyURL, cfg.ProxyPort, parser)
 	} else if cfg.PID != 0 {
 		handlerTrans = transport.NewEBPF(cfg.PID, parser)
+	} else if cfg.SocketLocal != "" && cfg.SocketTarget != "" {
+		handlerTrans = transport.NewSocket(cfg.SocketLocal, cfg.SocketTarget, parser)
 	}
 
 	messages := make(chan *engine.Message, 1000)

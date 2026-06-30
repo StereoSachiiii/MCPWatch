@@ -26,4 +26,19 @@ Desktop.ini
 
 # Local testing data
 mcpwatch_data/
+mcpwatch_ebpf_data/
+mcpwatch_ebpf_test_db/
 test_env/
+*.log
+
+# Compiled eBPF objects
+*.o
+
+# Platform-specific test/build binaries
+mcpwatch_linux
+test/testserver_linux
+
+# Scratch/config files
+input.json
+
+

@@ -68,6 +68,14 @@ func New(path string) (*Store, error) {
 	store.idCounter.Store(initialCount)
 	go store.runDrain()
 
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			_ = db.RunValueLogGC(0.5)
+		}
+	}()
+
 	return store, nil
 }
 
@@ -132,7 +140,8 @@ func (s *Store) flush(batch []*engine.Message) {
 				continue
 			}
 
-			if err := txn.Set([]byte(key), val); err != nil {
+			entry := badger.NewEntry([]byte(key), val).WithTTL(24 * time.Hour)
+			if err := txn.SetEntry(entry); err != nil {
 				return err
 			}
 

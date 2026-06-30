@@ -3,6 +3,7 @@ package transport
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,6 +13,10 @@ import (
 	"strings"
 
 	"mcpwatch/internal/engine"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 
@@ -72,25 +77,58 @@ type interceptingTransport struct {
 }
 
 func (t *interceptingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	var parentCtx context.Context = req.Context()
+	var bodyBytes []byte
 
 	if req.Body != nil {
-		bodyBytes, _ := io.ReadAll(req.Body)
+		bodyBytes, _ = io.ReadAll(req.Body)
 		req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
-		lines := bytes.Split(bodyBytes, []byte("\n"))
-		for _, lineBytes := range lines {
-			lineBytes = bytes.TrimSpace(lineBytes)
-			lineBytes = bytes.TrimPrefix(lineBytes, []byte("\x1e"))
-			line := string(lineBytes)
-			if line == "" {
-				continue
-			}
-			if msg := t.parser.Parse(line, "IN", t.transportType); msg != nil {
-				select {
-				case t.messages <- msg:
-				default:
-				}
-			}
+		var paramsObj struct {
+			Meta struct {
+				Traceparent string `json:"traceparent"`
+			} `json:"meta"`
+			MetaAlt struct {
+				Traceparent string `json:"traceparent"`
+			} `json:"_meta"`
+		}
+		var jsonRPCReq struct {
+			Params json.RawMessage `json:"params"`
+		}
+		if err := json.Unmarshal(bodyBytes, &jsonRPCReq); err == nil && len(jsonRPCReq.Params) > 0 {
+			_ = json.Unmarshal(jsonRPCReq.Params, &paramsObj)
+		}
+
+		tp := paramsObj.Meta.Traceparent
+		if tp == "" {
+			tp = paramsObj.MetaAlt.Traceparent
+		}
+		if tp != "" {
+			carrier := propagation.MapCarrier{"traceparent": tp}
+			propagator := propagation.TraceContext{}
+			parentCtx = propagator.Extract(parentCtx, carrier)
+		}
+	}
+
+	tracer := otel.Tracer("mcpwatch")
+	var span trace.Span
+	if tracer != nil {
+		parentCtx, span = tracer.Start(parentCtx, "mcp.proxy.forward", trace.WithSpanKind(trace.SpanKindClient))
+		defer span.End()
+	}
+
+	propagator := otel.GetTextMapPropagator()
+	if propagator != nil {
+		propagator.Inject(parentCtx, propagation.HeaderCarrier(req.Header))
+	}
+
+	if req.Body != nil {
+		req.Body = &bodyInterceptor{
+			ReadCloser: io.NopCloser(bytes.NewBuffer(bodyBytes)),
+			messages:   t.messages,
+			transType:  t.transportType,
+			direction:  "IN",
+			parser:     t.parser,
 		}
 	}
 
@@ -113,20 +151,76 @@ func (t *interceptingTransport) RoundTrip(req *http.Request) (*http.Response, er
 				parser:     t.parser,
 			}
 		} else {
-
-			bodyBytes, _ := io.ReadAll(res.Body)
-			res.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-			line := string(bodyBytes)
-			if msg := t.parser.Parse(line, "OUT", t.transportType); msg != nil {
-				select {
-				case t.messages <- msg:
-				default:
-				}
+			res.Body = &bodyInterceptor{
+				ReadCloser: res.Body,
+				messages:   t.messages,
+				transType:  t.transportType,
+				direction:  "OUT",
+				parser:     t.parser,
 			}
 		}
 	}
 
 	return res, err
+}
+
+type bodyInterceptor struct {
+	io.ReadCloser
+	messages  chan<- *engine.Message
+	transType string
+	direction string
+	buf       []byte
+	parser    engine.Parser
+}
+
+func (s *bodyInterceptor) Read(p []byte) (n int, err error) {
+	n, err = s.ReadCloser.Read(p)
+	if n > 0 {
+		if len(s.buf)+n > 10*1024*1024 {
+			return 0, fmt.Errorf("stream buffer limit exceeded (10MB)")
+		}
+		s.buf = append(s.buf, p[:n]...)
+		for {
+			idx := bytes.IndexByte(s.buf, '\n')
+			if idx == -1 {
+				break
+			}
+			lineBytes := s.buf[:idx]
+			s.buf = s.buf[idx+1:]
+
+			lineBytes = bytes.TrimSpace(lineBytes)
+			lineBytes = bytes.TrimPrefix(lineBytes, []byte("\x1e"))
+			line := string(lineBytes)
+
+			if line == "" {
+				continue
+			}
+
+			if msg := s.parser.Parse(line, s.direction, s.transType); msg != nil {
+				select {
+				case s.messages <- msg:
+				default:
+				}
+			}
+		}
+	}
+	if err == io.EOF {
+		if len(s.buf) > 0 {
+			lineBytes := bytes.TrimSpace(s.buf)
+			lineBytes = bytes.TrimPrefix(lineBytes, []byte("\x1e"))
+			line := string(lineBytes)
+			s.buf = nil
+			if line != "" {
+				if msg := s.parser.Parse(line, s.direction, s.transType); msg != nil {
+					select {
+					case s.messages <- msg:
+					default:
+					}
+				}
+			}
+		}
+	}
+	return n, err
 }
 
 type streamInterceptor struct {
@@ -152,7 +246,6 @@ func (s *streamInterceptor) Read(p []byte) (n int, err error) {
 			lineBytes := s.buf[:idx]
 			s.buf = s.buf[idx+1:]
 
-			// Strip \r, leading whitespace, and JSON-seq \x1e character
 			lineBytes = bytes.TrimSpace(lineBytes)
 			lineBytes = bytes.TrimPrefix(lineBytes, []byte("\x1e"))
 			line := string(lineBytes)
@@ -173,6 +266,30 @@ func (s *streamInterceptor) Read(p []byte) (n int, err error) {
 					select {
 					case s.messages <- msg:
 					default:
+					}
+				}
+			}
+		}
+	}
+	if err == io.EOF {
+		if len(s.buf) > 0 {
+			lineBytes := bytes.TrimSpace(s.buf)
+			lineBytes = bytes.TrimPrefix(lineBytes, []byte("\x1e"))
+			line := string(lineBytes)
+			s.buf = nil
+			if line != "" {
+				var payload string
+				if strings.HasPrefix(line, "data:") {
+					payload = strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+				} else {
+					payload = line
+				}
+				if payload != "" && (strings.HasPrefix(payload, "{") || strings.HasPrefix(payload, "[")) {
+					if msg := s.parser.Parse(payload, "OUT", s.transType); msg != nil {
+						select {
+						case s.messages <- msg:
+						default:
+						}
 					}
 				}
 			}

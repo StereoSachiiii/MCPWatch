@@ -101,7 +101,9 @@
                 </div>`;
             return;
         }
-        timeline.innerHTML = filtered.map((m, i) => buildCard(m, i)).join('');
+        // Limit visible timeline items to 100 for browser DOM performance
+        const visible = filtered.slice(0, 100);
+        timeline.innerHTML = visible.map((m, i) => buildCard(m, i)).join('');
     }
 
     function renderNewMessage(msg) {
@@ -116,8 +118,8 @@
 
         timeline.prepend(card);
 
-        // Cap visible cards
-        while (timeline.children.length > 200) {
+        // Cap visible cards to 100 to prevent layout thrashing
+        while (timeline.children.length > 100) {
             timeline.lastChild.remove();
         }
     }
@@ -314,9 +316,9 @@
 
             const statErrorRate = $('#stat-error-rate');
             if (statErrorRate) {
-                const total = data.total_messages || 0;
+                const requests = data.total_requests || 0;
                 const errors = data.total_errors || 0;
-                const rate = total > 0 ? ((errors / total) * 100).toFixed(1) : 0;
+                const rate = requests > 0 ? ((errors / requests) * 100).toFixed(1) : 0;
                 statErrorRate.textContent = `${rate}% error rate`;
             }
         } catch { /* ignore */ }

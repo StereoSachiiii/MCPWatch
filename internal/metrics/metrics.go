@@ -76,18 +76,6 @@ func RecordMetrics(msg *engine.Message) {
 		).Add(float64(msg.TokenEstimate))
 	}
 
-	// Record requests volume
-	if msg.MsgType == engine.MsgTypeRequest {
-		status := "success"
-		if msg.ErrorCode != "" || (msg.ErrorData != "" && msg.ErrorData != "null") {
-			status = "error"
-		}
-		RequestsTotal.WithLabelValues(
-			msg.Method,
-			status,
-		).Inc()
-	}
-
 	// Record responses volume and latency distributions
 	if msg.MsgType == engine.MsgTypeResponse {
 		status := "success"
